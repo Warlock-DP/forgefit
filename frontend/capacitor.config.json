@@ -1,6 +1,6 @@
 {
-  "appId": "ch.duartesantos.opengym",
-  "appName": "openGym",
+  "appId": "com.forgefit.app",
+  "appName": "ForgeFit",
   "webDir": "dist",
   "backgroundColor": "#0c0e12",
   "android": {

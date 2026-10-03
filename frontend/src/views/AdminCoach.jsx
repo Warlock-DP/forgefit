@@ -234,7 +234,7 @@ function ChatGPTLoginSheet({ close, onDone, label }) {
   return <>
     <h3>Connect {label}</h3>
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
-      This starts Codex&apos;s official ChatGPT device-code sign-in inside the private Coach runtime. On your iPad or another trusted browser, open the link and enter the one-time code it shows. No API key is used or stored by OpenGym.
+      This starts Codex&apos;s official ChatGPT device-code sign-in inside the private Coach runtime. On your iPad or another trusted browser, open the link and enter the one-time code it shows. No API key is used or stored by ForgeFit.
     </div>
     {!waiting && login?.state !== 'connected' && <Button variant="primary" disabled={busy} onClick={start}>Start device sign-in</Button>}
     {waiting && <div className="small muted" style={{ marginBottom: 8 }}>Waiting for ChatGPT sign-in…</div>}
@@ -264,7 +264,7 @@ function ApiKeySheet({ close, onDone, label }) {
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
       Stored encrypted on this server and passed to the provider runtime only while a job runs. It is never shown again and never leaves the server.
     </div>
-    <TextField value={key} autoFocus type="password" placeholder="sk-…" onChange={e => setKey(e.target.value)} />
+    <TextField value={key} autoFocus type="password" placeholder="paste API key" onChange={e => setKey(e.target.value)} />
     <div style={{ height: 12 }} />
     <Button variant="primary" disabled={busy || !key.trim()} onClick={save}>Save key</Button>
     <div style={{ height: 8 }} />

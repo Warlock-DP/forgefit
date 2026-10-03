@@ -56,10 +56,13 @@ export function clearUser(uid) {
   try { fs.unlinkSync(userFile(uid)); } catch { /* nothing to clear */ }
 }
 
-export function readState(uid) {
+function readFileState(uid) {
   try { return JSON.parse(fs.readFileSync(path.join(DATA, 'state-' + safe(uid) + '.json'), 'utf8')); }
   catch { return null; }
 }
+let stateReader = readFileState;
+export function setStateReader(fn) { stateReader = typeof fn === 'function' ? fn : readFileState; }
+export function readState(uid) { return stateReader(uid); }
 
 /* ---------- caps ---------- */
 

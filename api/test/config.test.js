@@ -57,7 +57,7 @@ test('a Claude Code setup token is encrypted and reaches only the Agent SDK envi
   assert.deepEqual(Object.keys(env).sort(), ['CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
 });
 
-test('retired Gemini and Custom command configurations reset to unconfigured Claude', () => {
+test('Gemini remains configured while the retired Custom command field is removed', () => {
   cfg.save({
     enabled: true,
     provider: 'gemini',
@@ -66,11 +66,12 @@ test('retired Gemini and Custom command configurations reset to unconfigured Cla
   });
   cfg.reset();
   const current = cfg.load();
-  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture']);
-  assert.equal(current.provider, 'claude');
-  assert.equal(current.auth, null);
+  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture', 'gemini']);
+  assert.equal(current.provider, 'gemini');
+  assert.ok(current.auth);
   assert.equal(Object.hasOwn(current, 'customCommand'), false);
-  assert.equal(cfg.isConnected(), false);
+  assert.equal(cfg.isConnected(), true);
+  assert.equal(cfg.jobEnv('/tmp/jobdir').GEMINI_API_KEY, 'gemini-key');
 });
 
 test('Codex uses its own ChatGPT CLI cache and never receives an API key', () => {

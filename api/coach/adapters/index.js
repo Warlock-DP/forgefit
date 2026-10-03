@@ -7,7 +7,9 @@
  * codebase — routes, jobs, payload, validation, UI — knows which one is configured.
  */
 import { run } from './spawn.js';
+import { fileURLToPath } from 'node:url';
 import claude from './claude.js';
+import gemini from './gemini.js';
 import { CODEX_BIN } from './codex-cli.js';
 
 const CODEX_DISABLED_FEATURES = [
@@ -45,7 +47,7 @@ const codex = {
  * lets an instance owner see the entire Coach loop — intake, proposal, apply, revert —
  * before deciding whether to connect a real account to it.
  */
-const FIXTURE = new URL('../fixture-cli.mjs', import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL('../fixture-cli.mjs', import.meta.url));
 const fixture = {
   id: 'fixture',
   cli: process.execPath,
@@ -61,6 +63,6 @@ const fixture = {
   }
 };
 
-const ADAPTERS = { claude, codex, fixture };
+const ADAPTERS = { claude, codex, gemini, fixture };
 export const adapterFor = provider => ADAPTERS[provider] || null;
 export default ADAPTERS;

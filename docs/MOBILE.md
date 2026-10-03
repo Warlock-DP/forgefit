@@ -54,16 +54,15 @@ npx @capacitor/assets generate --iconBackgroundColor '#0c0e12' --splashBackgroun
 (If the generator won't take the SVG directly, export it to `resources/icon.png` at
 1024×1024 first — any image tool can do it.)
 
-## Distribution — deliberately no app stores
+## Distribution
 
-openGym's mobile app is not on the Play Store or App Store, and that's a choice: no store
-accounts, no store rules, no yearly fees between you and an open-source app.
+ForgeFit is first distributed as an installable cloud PWA. The native projects remain available
+for an independently signed Android or iOS build.
 
 ### Android — sideload the APK
 
-The official signed APK is at **[opengym.duarte-santos.ch](https://opengym.duarte-santos.ch)**.
-Android asks you to allow installs from the browser the first time — that's standard for any
-app outside the Play Store.
+A signed ForgeFit APK has not been published yet. Android users can install the hosted PWA from
+Chrome, or build and sign the native package below.
 
 To build and sign your own:
 

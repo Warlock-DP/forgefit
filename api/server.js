@@ -1,5 +1,4 @@
-/* opengym-api — passkey (WebAuthn) auth + per-user state storage for openGym
-   No framework, JSON-file storage, signed session cookies.               */
+/* ForgeFit API — passkey (WebAuthn) auth + per-user cloud storage. */
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -13,12 +12,14 @@ import * as coachConfig from './coach/config.js';
 import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
+import { createStorage } from './storage.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
 const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
-const RP_NAME = process.env.RP_NAME || 'openGym';
+const RP_NAME = process.env.RP_NAME || 'ForgeFit';
+const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
 // Admin dashboard (issue): admins are matched by uid; INVITE_ONLY gates new signups behind a
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -41,25 +42,21 @@ try { fs.chmodSync(DATA, 0o700); } catch { /* host filesystem says no — carry 
 
 /* ---------- secret + db ---------- */
 const secretFile = path.join(DATA, 'secret');
-if (!fs.existsSync(secretFile)) fs.writeFileSync(secretFile, crypto.randomBytes(32).toString('hex'), { mode: 0o600 });
+const configuredSecret = String(process.env.SESSION_SECRET || '').trim();
+if (!fs.existsSync(secretFile)) fs.writeFileSync(secretFile, configuredSecret || crypto.randomBytes(32).toString('hex'), { mode: 0o600 });
 const SECRET = fs.readFileSync(secretFile, 'utf8').trim();
+if (configuredSecret && configuredSecret !== SECRET) {
+  throw new Error('SESSION_SECRET does not match the persisted /data/secret');
+}
 
-const dbFile = path.join(DATA, 'db.json');
-let db = { users: [], creds: [], subs: [], invites: [] };
-try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); } catch {}
+const storage = await createStorage({ dataDir: DATA });
+let db = await storage.loadDatabase();
 db.subs = db.subs || [];
 db.invites = db.invites || [];
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
-function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
-function atomicWrite(file, content) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
-}
-const stateFile = uid => path.join(DATA, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
-function readState(uid) {
-  try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
-}
+const saveDb = () => storage.saveDatabase(db);
+const readState = uid => storage.readState(uid);
+const saveState = (uid, state) => storage.saveState(uid, state);
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -88,7 +85,7 @@ async function sendPush(userId, payload) {
       }
     }
   }));
-  if (dirty) saveDb();
+  if (dirty) await saveDb();
 }
 
 // Rest-timer alerts: client schedules on start/extend, cancels on skip or on-screen completion —
@@ -99,7 +96,8 @@ function scheduleRestTimer(userId, sec) {
   if (t) clearTimeout(t);
   restTimers.set(userId, setTimeout(() => {
     restTimers.delete(userId);
-    sendPush(userId, { title: 'Rest over 💪', body: 'Time for your next set.', tag: 'rest-timer' });
+    void sendPush(userId, { title: 'Rest over 💪', body: 'Time for your next set.', tag: 'rest-timer' })
+      .catch(error => console.error('rest-timer push failed', error));
   }, sec * 1000));
 }
 function cancelRestTimer(userId) {
@@ -131,7 +129,7 @@ function userNow(tz) {
     return { date, hhmm: `${g('hour')}:${g('minute')}`, weekday: new Date(date + 'T12:00:00Z').getUTCDay() };
   } catch { return null; } // unknown/invalid tz string — skip this user rather than guess
 }
-setInterval(() => {
+async function checkReminders() {
   for (const user of db.users) {
     if (!db.subs.some(s => s.userId === user.id)) continue;
     const S = readState(user.id);
@@ -145,16 +143,17 @@ setInterval(() => {
     const routine = (S.routines || []).find(r => r.id === rid);
     console.log('reminder firing', user.id, rid);
     user.lastReminder = now.date;
-    saveDb();
-    sendPush(user.id, {
+    await saveDb();
+    void sendPush(user.id, {
       title: routine ? `${routine.emoji || '🏋️'} ${routine.name} today` : 'Workout planned today',
       body: "It's on your plan — let's go 💪",
       tag: 'day-reminder'
-    });
+    }).catch(error => console.error('reminder push failed', error));
   }
+}
 // Checked every 10s (not 60s) — ticks aren't aligned to the top of the minute, so a 60s
 // interval could sit on your target minute for up to 59s before noticing. 10s caps that at ~9s.
-}, 10000).unref();
+setInterval(() => { void checkReminders().catch(error => console.error('reminder check failed', error)); }, 10000).unref();
 
 /* ---------- sessions (signed cookie) ---------- */
 function sign(payload) {
@@ -265,7 +264,7 @@ setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt 
 
 /* ---------- routes ---------- */
 const routes = {
-  'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
+  'GET /api/health': async (req, res) => json(res, 200, { ok: true, app: 'ForgeFit', users: db.users.length, storage: storage.mode }),
 
   // Public config the login screen needs before anyone is signed in. `coach` is absent unless
   // the instance has both switched the Coach on and successfully connected a provider — the
@@ -333,7 +332,7 @@ const routes = {
       counter: credential.counter || 0,
       transports: body.credential?.response?.transports || []
     });
-    saveDb();
+    await saveDb();
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
   },
 
@@ -369,7 +368,7 @@ const routes = {
     } catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
     if (!verification.verified) return json(res, 400, { error: 'not verified' });
     cred.counter = verification.authenticationInfo.newCounter;
-    saveDb();
+    await saveDb();
     const user = db.users.find(u => u.id === cred.userId);
     if (!user) return json(res, 500, { error: 'user missing' });
     if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
@@ -386,17 +385,14 @@ const routes = {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     user.sv = sessionVersion(user) + 1;
-    saveDb();
+    await saveDb();
     json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie });
   },
 
   'GET /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    try {
-      const state = JSON.parse(fs.readFileSync(stateFile(user.id), 'utf8'));
-      json(res, 200, { state });
-    } catch { json(res, 200, { state: null }); }
+    json(res, 200, { state: readState(user.id) });
   },
 
   'PUT /api/data': async (req, res) => {
@@ -405,7 +401,7 @@ const routes = {
     const body = await readBody(req);
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     delete body.state.active;              // in-progress workouts stay device-local
-    atomicWrite(stateFile(user.id), JSON.stringify(body.state));
+    await saveState(user.id, body.state);
     json(res, 200, { ok: true, ts: body.state._ts || null });
   },
 
@@ -419,7 +415,7 @@ const routes = {
     if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return json(res, 400, { error: 'invalid subscription' });
     db.subs = db.subs.filter(s => s.endpoint !== sub.endpoint);
     db.subs.push({ userId: user.id, endpoint: sub.endpoint, keys: sub.keys, created: new Date().toISOString() });
-    saveDb();
+    await saveDb();
     json(res, 200, { ok: true });
   },
 
@@ -428,14 +424,14 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
     db.subs = db.subs.filter(s => !(s.userId === user.id && s.endpoint === body.endpoint));
-    saveDb();
+    await saveDb();
     json(res, 200, { ok: true });
   },
 
   'POST /api/push/test': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    await sendPush(user.id, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
+    await sendPush(user.id, { title: 'ForgeFit', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
     json(res, 200, { ok: true });
   },
 
@@ -519,7 +515,7 @@ const routes = {
     if (isAdmin(u)) return json(res, 400, { error: 'cannot disable an admin' });
     u.disabled = !!body.disabled;
     if (u.disabled) presence.delete(u.id);   // drop them off "training now" at once
-    saveDb();
+    await saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
   },
 
@@ -543,7 +539,7 @@ const routes = {
     do { code = crypto.randomBytes(8).toString('hex').toUpperCase(); } while (db.invites.some(i => i.code === code));
     const invite = { code, note: String(body.note || '').slice(0, 60), createdBy: admin.id, created: new Date().toISOString() };
     db.invites.push(invite);
-    saveDb();
+    await saveDb();
     json(res, 200, { invite });
   },
 
@@ -554,7 +550,7 @@ const routes = {
     if (!inv) return json(res, 404, { error: 'no such code' });
     if (inv.usedBy) return json(res, 400, { error: 'already used — cannot revoke' });
     db.invites = db.invites.filter(i => i.code !== inv.code);
-    saveDb();
+    await saveDb();
     json(res, 200, { ok: true });
   },
 
@@ -568,28 +564,55 @@ const routes = {
 /* ---------- Coach: boot recovery, notifications, scheduled reviews ---------- */
 // A job that was running when the process died is not coming back; say so rather than leaving
 // a spinner that never resolves.
+coachJobs.setStateReader(readState);
 coachJobs.recoverOnBoot();
 // A ready proposal is the one Coach event worth a notification. Failures and "nothing to
 // change" stay silent on purpose (FR-38/E4).
 coachJobs.setProposalHook((uid, pending) => {
   const n = (pending?.changes || []).length;
   if (!n) return;
-  sendPush(uid, {
+  void sendPush(uid, {
     title: 'Your Coach has been reading',
     body: n === 1 ? '1 suggestion after this week' : `${n} suggestions after this week`,
     tag: 'coach-proposal', url: '#/coach'
-  });
+  }).catch(error => console.error('coach push failed', error));
 });
 startCadence({ users: () => db.users, userNow });
 
-http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://x');
-  const key = req.method + ' ' + url.pathname;
-  const handler = routes[key];
-  if (!handler) return json(res, 404, { error: 'not found' });
-  try { await handler(req, res); }
-  catch (e) {
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webmanifest': 'application/manifest+json' };
+function serveStatic(urlPath, res) {
+  if (!STATIC_DIR) return false;
+  const rel = decodeURIComponent(urlPath).replace(/^\/+/, '');
+  let file = path.resolve(STATIC_DIR, rel || 'index.html');
+  if (!file.startsWith(STATIC_DIR + path.sep) && file !== path.join(STATIC_DIR, 'index.html')) return false;
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) file = path.join(STATIC_DIR, 'index.html');
+  if (!fs.existsSync(file)) return false;
+  const shellFiles = new Set(['index.html', 'manifest.json', 'sw.js']);
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': shellFiles.has(path.basename(file)) ? 'no-cache' : 'public, max-age=31536000, immutable' });
+  fs.createReadStream(file).pipe(res);
+  return true;
+}
+
+const server = http.createServer(async (req, res) => {
+  let key = `${req.method} ${req.url}`;
+  try {
+    const url = new URL(req.url, 'http://x');
+    key = req.method + ' ' + url.pathname;
+    const handler = routes[key];
+    if (!handler) {
+      if (req.method === 'GET' && !url.pathname.startsWith('/api/') && serveStatic(url.pathname, res)) return;
+      return json(res, 404, { error: 'not found' });
+    }
+    await handler(req, res);
+  } catch (e) {
     console.error(key, e);
     if (!res.headersSent) json(res, 500, { error: 'server error' });
   }
-}).listen(PORT, () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`));
+});
+server.listen(PORT, () => console.log(`ForgeFit on :${PORT} (storage=${storage.mode}, rpID=${RP_ID}, origin=${ORIGIN})`));
+
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+  server.close();
+  await storage.close();
+  process.exit(0);
+});

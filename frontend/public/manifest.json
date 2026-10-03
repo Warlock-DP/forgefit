@@ -1,13 +1,13 @@
 {
-  "name": "openGym",
-  "short_name": "openGym",
-  "description": "Personal gym & body weight tracker",
+  "name": "ForgeFit",
+  "short_name": "ForgeFit",
+  "description": "Your lightweight, cloud-synced workout tracker and AI coach",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0c0e12",
-  "theme_color": "#0c0e12",
+  "theme_color": "#ff6a00",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }

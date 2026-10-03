@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="openGym" width="720">
+<h1>ForgeFit</h1>
 
 <br>
 
-**A self-hosted gym & body-weight tracker you actually own.**
+**A lightweight, cloud-synced gym tracker with an optional AI coach.**
 
 Plan your week, run guided workouts, track every set and your body weight over time —
 on your phone, synced across devices, behind your own passkey login.
-No account on someone else's server, no subscription, no ads. Just `docker compose up`.
+Install it from your browser, keep the data in your own Neon database, and choose your own AI.
 
 <br>
 
@@ -19,24 +19,25 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![No tracking](https://img.shields.io/badge/telemetry-none-f472b6?style=flat-square)
 <br>
-![GitHub last commit](https://img.shields.io/github/last-commit/DuarteSantos8/openGym?style=flat-square)
-[![GitHub stars](https://img.shields.io/github/stars/DuarteSantos8/openGym?style=flat-square)](https://github.com/DuarteSantos8/openGym/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/DuarteSantos8/openGym?style=flat-square)](https://github.com/DuarteSantos8/openGym/issues)
+![GitHub last commit](https://img.shields.io/github/last-commit/Warlock-DP/forgefit?style=flat-square)
+[![GitHub stars](https://img.shields.io/github/stars/Warlock-DP/forgefit?style=flat-square)](https://github.com/Warlock-DP/forgefit/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/Warlock-DP/forgefit?style=flat-square)](https://github.com/Warlock-DP/forgefit/issues)
 
 </div>
 
 <br>
 
-> ### 🤖 This is a fork — it adds the AI Coach
+> ### 🤖 ForgeFit is built from openGym
 >
-> A fork of [DuarteSantos8/openGym](https://github.com/DuarteSantos8/openGym) that adds one
-> optional feature: an AI that **designs** your training plan and **revises it from what you
-> actually log**, running on your own server under your own provider account.
+> A fork of [DuarteSantos8/openGym](https://github.com/DuarteSantos8/openGym) with ForgeFit
+> branding, cloud-ready Neon storage, Netlify + Railway deployment, and an optional AI that
+> **designs** your training plan and **revises it from what you actually log**.
 >
-> Everything else is upstream openGym. With the Coach switched off, this is byte-for-byte the
-> app it forked from.
+> The Coach can use Google Gemini, OpenAI Codex, Claude Code, or the offline test fixture. It is
+> off until an administrator enables it and each user gives consent.
 >
 > **→ [What it does and how to use it](docs/AI_COACH.md)** ·
+> [ForgeFit cloud deployment](docs/FORGEFIT_CLOUD.md) ·
 > [Claude setup](Claude-setup-instructions.md) ·
 > [ChatGPT / Codex setup](ChatGPT-setup-instructions.md) ·
 > [design deck (PDF)](openGym_AI_Strategy.pdf)
@@ -55,19 +56,17 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 
 <div align="center">
 
-### [🌐 opengym.duarte-santos.ch](https://opengym.duarte-santos.ch) · [▶ Try the live demo](https://duartesantos8.github.io/openGym/)
+### ForgeFit cloud release in progress
 
-No signup, nothing to install — it runs entirely in your browser on example data.<br>
-<sub>There's no server behind the demo, so passkey sign-in, sync across devices and the
-admin dashboard only exist in a self-hosted instance.</sub>
+The public Netlify address will be added here after the first production deployment.
 
 </div>
 
 ## Why
 
 Most workout apps lock your data behind a login on their servers, nag you to upgrade, or
-disappear when the startup does. openGym is the opposite: **it runs on your box, your data
-stays in a folder you control, and it's yours to fork.** It still feels modern — installable
+disappear when the startup does. ForgeFit is the opposite: **it runs on your cloud account,
+your data stays in storage you control, and it's yours to fork.** It still feels modern — installable
 as a home-screen app, passkey sign-in, offline support, sync across your phone and laptop.
 
 ## Features
@@ -96,15 +95,15 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 🌍 **12 languages** — full UI translation (EN, DE, ES, FR, IT, PT, PL, TR, RU, ZH, KO, HI); exercise instructions localized in 10 of them, loaded on demand so the app stays fast
 - 📥 **Bring your history with you** — import from **FitNotes** (Android and iOS), **Strong** and **Hevy**, or body weight straight out of an **Apple Health** export. Exercise names are matched against the library and anything unrecognised becomes one of your own exercises, so nothing in the file is dropped
 - 📦 **Yours to keep** — one-tap JSON export/import, guest mode, **no telemetry**
-- 📱 **Standalone Android app** — the whole tracker as a sideloadable APK: no account, no server, data on the phone, native workout reminders ([download](https://opengym.duarte-santos.ch))
+- 📱 **Android-ready** — install the cloud PWA from Chrome today; a ForgeFit APK can be built from the included Capacitor project after the hosted release is verified
 
 ## Quick start (self-host)
 
 You need [Docker](https://docs.docker.com/get-docker/) with Compose.
 
 ```bash
-git clone https://github.com/DuarteSantos8/openGym
-cd openGym
+git clone https://github.com/Warlock-DP/forgefit
+cd forgefit
 cp .env.example .env
 docker compose pull   # grab prebuilt images (amd64 + arm64) — skip to build from source instead
 docker compose up -d
@@ -125,8 +124,8 @@ no backend — everything stays on the phone, with native workout-day reminders 
 backups. Self-hosting gets you multi-device sync and profiles for friends & family; the
 mobile app is the install-and-done flavor.
 
-- **Android:** [**download the APK**](https://opengym.duarte-santos.ch) and sideload it —
-  openGym is deliberately not on the Play Store. Or build it yourself: **[docs/MOBILE.md](docs/MOBILE.md)**.
+- **Android:** install the hosted PWA from Chrome, or build the included Capacitor project
+  yourself: **[docs/MOBILE.md](docs/MOBILE.md)**. A signed ForgeFit APK has not been published yet.
 - **iPhone:** Apple doesn't allow installing apps outside the App Store, so there is no iOS
   download. Self-host and add it to your home screen from Safari (it's a full PWA), or build
   the native app onto your own device from Xcode — see **[docs/MOBILE.md](docs/MOBILE.md)**.
@@ -183,7 +182,7 @@ walkthroughs for [Claude](Claude-setup-instructions.md) and [ChatGPT/Codex](Chat
 
 Rough, community-driven — ideas and PRs welcome:
 
-- [x] Standalone mobile app — Android APK to sideload ([download](https://opengym.duarte-santos.ch)); on iOS as a self-hosted PWA (no store listings planned)
+- [ ] Publish a signed ForgeFit Android APK; the Capacitor project and installable cloud PWA are ready
 - [x] Automatic progression programs (linear, Greyskull LP, double progression) with stalls and deloads
 - [x] Estimated 1RM per exercise
 - [ ] Percentage / training-max programming (5/3/1-style) on top of the progression engine
@@ -209,24 +208,15 @@ React, the router and Zustand.
 
 ## Community
 
-- **[Q&A](https://github.com/DuarteSantos8/openGym/discussions/categories/q-a)** — self-hosting
-  help, passkey/login trouble, "how do I…". Most login problems turn out to be an `RP_ID`/`ORIGIN`
-  mismatch.
-- **[Ideas](https://github.com/DuarteSantos8/openGym/discussions/categories/ideas)** — features
-  worth talking through before anyone writes code.
-- **[Show and tell](https://github.com/DuarteSantos8/openGym/discussions/categories/show-and-tell)**
-  — your setup, your plan templates, whatever you built on top.
-- **[Issues](https://github.com/DuarteSantos8/openGym/issues)** — bugs, and work that's already
-  been agreed on.
+- **[Issues](https://github.com/Warlock-DP/forgefit/issues)** — deployment help, bugs, and
+  feature requests. Most login problems turn out to be an `RP_ID`/`ORIGIN` mismatch.
 
 ## Contributing
 
 Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Good first issues: more starter
 plans, exercise-data languages, import from other trackers. **A ⭐ helps more people find it.**
 
-openGym is free and stays free: AGPL, no subscription, no paid tier, nothing held back for
-sponsors. If it replaced a paid tracker for you and you want to chip in, the Sponsor button at the
-top of the page is there — a star, a bug report or a PR is worth just as much.
+ForgeFit is free and open source under AGPL v3. A star, bug report, or pull request helps improve it.
 
 ## License
 

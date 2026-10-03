@@ -9,7 +9,7 @@
    Provider credentials normally live encrypted at rest with a key derived from ./data/secret
    (the same file that already signs session cookies, generated 0600 on first boot). ChatGPT
    sign-in is the exception: Codex owns its refreshable CLI credential in a separate private
-   cache, rather than OpenGym importing or duplicating an OAuth token. */
+   cache, rather than ForgeFit importing or duplicating an OAuth token. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,10 +18,10 @@ import { unprivilegedIds } from './adapters/spawn.js';
 const DATA = process.env.DATA_DIR || '/data';
 const FILE = path.join(DATA, 'coach.json');
 const coachCodexHome = process.env.COACH_CODEX_HOME || path.join(DATA, 'codex');
-// This file is deliberately owned by OpenGym, not a person's normal Codex configuration. It
+// This file is deliberately owned by ForgeFit, not a person's normal Codex configuration. It
 // gives spawned agent commands only their temporary workspace and the minimal runtime paths;
 // specifically, `:root = "deny"` prevents a Coach prompt from reading /codex/auth.json.
-const COACH_CODEX_CONFIG = `# Managed by openGym; do not add plugins, MCP servers, or broad permissions here.\ncli_auth_credentials_store = "file"\nallow_login_shell = false\napproval_policy = "never"\nweb_search = "disabled"\ndefault_permissions = "coach"\n\n[features]\nauth_elicitation = false\nshell_tool = false\nunified_exec = false\nshell_snapshot = false\nbrowser_use = false\nbrowser_use_external = false\nbrowser_use_full_cdp_access = false\nin_app_browser = false\ncomputer_use = false\napps = false\nplugins = false\nplugin_sharing = false\nremote_plugin = false\nmulti_agent = false\nskill_search = false\nskill_mcp_dependency_install = false\nworkspace_dependencies = false\nimage_generation = false\nhooks = false\ncode_mode_host = false\ntool_suggest = false\n\n[agents]\nenabled = false\n\n[permissions.coach.filesystem]\n":root" = "deny"\n":minimal" = "read"\n\n[permissions.coach.filesystem.":workspace_roots"]\n"." = "read"\n\n[permissions.coach.network]\nenabled = false\n`;
+const COACH_CODEX_CONFIG = `# Managed by ForgeFit; do not add plugins, MCP servers, or broad permissions here.\ncli_auth_credentials_store = "file"\nallow_login_shell = false\napproval_policy = "never"\nweb_search = "disabled"\ndefault_permissions = "coach"\n\n[features]\nauth_elicitation = false\nshell_tool = false\nunified_exec = false\nshell_snapshot = false\nbrowser_use = false\nbrowser_use_external = false\nbrowser_use_full_cdp_access = false\nin_app_browser = false\ncomputer_use = false\napps = false\nplugins = false\nplugin_sharing = false\nremote_plugin = false\nmulti_agent = false\nskill_search = false\nskill_mcp_dependency_install = false\nworkspace_dependencies = false\nimage_generation = false\nhooks = false\ncode_mode_host = false\ntool_suggest = false\n\n[agents]\nenabled = false\n\n[permissions.coach.filesystem]\n":root" = "deny"\n":minimal" = "read"\n\n[permissions.coach.filesystem.":workspace_roots"]\n"." = "read"\n\n[permissions.coach.network]\nenabled = false\n`;
 export const COACH_DISABLED = /^(1|true|yes|on)$/i.test(process.env.COACH_DISABLED || '');
 
 // Providers this build can drive. `runtime` is what the adapter runs; the credential fields
@@ -30,6 +30,7 @@ export const COACH_DISABLED = /^(1|true|yes|on)$/i.test(process.env.COACH_DISABL
 export const PROVIDERS = {
   claude: { label: 'Claude Code', runtime: 'Claude Agent SDK', setupToken: true, apiKeyEnv: 'ANTHROPIC_API_KEY', oauthEnv: 'CLAUDE_CODE_OAUTH_TOKEN' },
   codex: { label: 'OpenAI Codex CLI', runtime: 'OpenAI Codex CLI', deviceLogin: true, apiKeyEnv: null, oauthEnv: null },
+  gemini: { label: 'Google Gemini', runtime: 'Gemini API', apiKeyEnv: 'GEMINI_API_KEY', oauthEnv: null, defaultModel: 'gemini-3.7-flash' },
   // Test-only: drives the in-repo fixture CLI. Selectable so an instance can be exercised
   // end-to-end (and demoed) without any AI account at all.
   fixture: { label: 'Fixture (testing)', runtime: 'Fixture', apiKeyEnv: null, oauthEnv: null }
@@ -182,7 +183,7 @@ export function jobEnv(jobDir) {
   }
   if (cfg.provider === 'codex') {
     // This is the only persistent state a Codex job receives. The directory is a dedicated
-    // bind mount owned by `coach`; /data and every OpenGym secret remain inaccessible.
+    // bind mount owned by `coach`; /data and every ForgeFit secret remain inaccessible.
     env.CODEX_HOME = ensureCodexHome();
   }
   const auth = cfg.auth ? decrypt(cfg.auth.data) : null;

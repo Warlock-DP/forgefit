@@ -1,0 +1,14 @@
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# React Router runs in the browser. Static assets are served first; every other
+# non-API path falls back to the app shell.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
