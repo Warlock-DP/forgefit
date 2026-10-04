@@ -169,6 +169,37 @@ test('AI key is encrypted; public/admin replies never return it', async () => {
   const details = await response.text(); assert.equal(details.includes('fake-openrouter-test-key'), false); assert.equal(details.includes('credential'), false);
   assert.equal((await coach.publicConfig()).coach.provider, 'openrouter');
 });
+
+test('in-app OpenRouter settings remain owner-only for every mutation', async () => {
+  const store = memoryStore(); const { member } = await seed(store);
+  const paths = [
+    ['/api/admin/coach/config', { enabled: true, model: 'openrouter/free' }],
+    ['/api/admin/coach/auth/key', { key: 'test-key-not-a-real-credential' }],
+    ['/api/admin/coach/auth/disconnect', {}],
+    ['/api/admin/coach/test', {}]
+  ];
+  for (const [path, body] of paths) {
+    assert.equal((await app(store)(req(path, 'POST', body))).status, 401);
+    assert.equal((await app(store)(req(path, 'POST', body, member))).status, 403);
+  }
+  assert.equal(await store.get('netlify-coach-config'), null);
+});
+
+test('owner can save and test an encrypted OpenRouter key before enabling AI', async () => {
+  const store = memoryStore(); const { admin } = await seed(store);
+  let calls = 0;
+  const coach = createCoach({ store, cfg, adapter: { async invoke({ prompt }) {
+    calls++; assert.match(prompt, /coach_contract/); assert.equal(prompt.includes('workouts'), false);
+    return { code: 0, text: '{"coach_contract":1,"ok":true}' };
+  } } });
+  const response = await coach.route('POST /api/admin/coach/auth/key', { key: 'synthetic-openrouter-key' }, req('/api/admin/coach/auth/key', 'POST', {}, admin));
+  assert.deepEqual(await response.json(), { ok: true, test: { ok: true, version: 'OpenRouter API (free only)' } });
+  assert.equal(calls, 1);
+  const stored = await store.get('netlify-coach-config');
+  assert.equal(stored.enabled, false);
+  assert.equal(JSON.stringify(stored).includes('synthetic-openrouter-key'), false);
+  assert.deepEqual(await coach.publicConfig(), {});
+});
 test('Netlify blocks paid providers/models and enforces free-tier hard ceilings', async () => {
   const store = memoryStore(); const { admin } = await seed(store); const coach = await connect(store, admin, testAdapter);
   for (const patch of [{ provider: 'gemini' }, { model: 'openrouter/auto' }, { model: 'openai/gpt-4' }]) {

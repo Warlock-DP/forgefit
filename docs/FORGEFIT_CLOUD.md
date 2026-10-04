@@ -79,8 +79,14 @@ the configured CDN. No huge media folder or AI model is installed on the phone.
 
 ## OpenRouter: optional and free-only
 
-In **Settings → Admin dashboard → AI Coach**, enable the Coach and add an OpenRouter API key
-through the private key form, never chat or GitHub. Save-and-test sends a synthetic JSON prompt,
+In **Settings → AI & OpenRouter → Configure OpenRouter**, sign in as the owner, add an OpenRouter API key,
+test the connection, choose a free model, and enable the Coach. The same controls remain available
+in the admin dashboard. The provider key can be configured inside the app; it does not need a
+Netlify environment variable. Guests and non-admin profiles can see the setup entry but cannot
+read or change credentials.
+
+Enter the OpenRouter API key through the private key form, never chat or GitHub.
+Save-and-test sends a synthetic JSON prompt,
 not workout history. Each user must separately consent before personal data is sent.
 
 `openrouter/free` is a router, not a single fixed AI. An explicit reviewed model ID ending in
@@ -92,7 +98,7 @@ be verifiably zero. Requests also set zero-price ceilings and disable provider f
 Unavailable models, exhausted quotas or unverifiable pricing stop the request; nothing buys
 credits or upgrades automatically.
 
-[OpenRouter's free plan](https://openrouter.ai/pricing) currently allows 50 requests/day across
+[OpenRouter's free-model limits](https://openrouter.ai/docs/api_reference/limits) apply across
 the account. ForgeFit enforces 5 jobs/profile/day, 20 jobs/instance/day and 40 AI requests/day,
 including tests and one permitted JSON repair. Transactional counters survive forgetting the
 Coach. Usage in other apps can still exhaust the shared quota. Free availability is not promised.
