@@ -17,9 +17,14 @@
     "@capacitor/filesystem": "^7.1.8",
     "@capacitor/local-notifications": "^7.0.7",
     "@capacitor/share": "^7.0.4",
+    "@neondatabase/serverless": "^1.2.0",
+    "@simplewebauthn/server": "^13.3.3",
+    "drizzle-orm": "^0.44.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
+    "web-push": "^3.6.7",
+    "ws": "^8.22.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

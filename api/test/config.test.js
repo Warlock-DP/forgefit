@@ -66,12 +66,27 @@ test('Gemini remains configured while the retired Custom command field is remove
   });
   cfg.reset();
   const current = cfg.load();
-  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture', 'gemini']);
+  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture', 'gemini', 'openrouter']);
   assert.equal(current.provider, 'gemini');
   assert.ok(current.auth);
   assert.equal(Object.hasOwn(current, 'customCommand'), false);
   assert.equal(cfg.isConnected(), true);
   assert.equal(cfg.jobEnv('/tmp/jobdir').GEMINI_API_KEY, 'gemini-key');
+});
+
+test('OpenRouter keys remain encrypted and only reach the selected adapter environment', () => {
+  cfg.save({ enabled: true, provider: 'openrouter', model: null, auth: null });
+  assert.equal(cfg.isConnected(), false);
+  auth.setApiKey('fake-openrouter-key');
+  assert.equal(cfg.isConnected(), true);
+  assert.equal(cfg.PROVIDERS.openrouter.freeOnly, true);
+  assert.equal(cfg.PROVIDERS.openrouter.defaultModel, 'openrouter/free');
+  const env = cfg.jobEnv('/tmp/jobdir');
+  assert.equal(env.OPENROUTER_API_KEY, 'fake-openrouter-key');
+  assert.equal(env.GEMINI_API_KEY, undefined);
+  assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
+  assert.ok(!fs.readFileSync(`${DIR}/coach.json`, 'utf8').includes('fake-openrouter-key'));
+  assert.ok(!JSON.stringify(cfg.publicConfig()).includes('fake-openrouter-key'));
 });
 
 test('Codex uses its own ChatGPT CLI cache and never receives an API key', () => {

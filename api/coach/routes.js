@@ -9,6 +9,7 @@ import * as oauth from './oauth.js';
 import * as jobs from './jobs.js';
 import { adapterFor } from './adapters/index.js';
 import { DATA_CATEGORIES } from './payload.js';
+import { isFreeModel, DEFAULT_MODEL as OPENROUTER_MODEL } from './adapters/openrouter.js';
 
 // Job failures the user sees, in the app's own voice. The raw provider detail never reaches
 // them — it goes to the admin card, which is where someone can act on it (FR-47).
@@ -107,7 +108,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
         disabledByEnv: cfgStore.COACH_DISABLED,
         enabled: !!cfg.enabled,
         provider: cfg.provider,
-        providers: Object.entries(cfgStore.PROVIDERS).map(([id, p]) => ({ id, label: p.label, runtime: p.runtime, setupToken: !!p.setupToken, deviceLogin: !!p.deviceLogin, apiKey: !!p.apiKeyEnv })),
+        providers: Object.entries(cfgStore.PROVIDERS).map(([id, p]) => ({ id, label: p.label, runtime: p.runtime, setupToken: !!p.setupToken, deviceLogin: !!p.deviceLogin, apiKey: !!p.apiKeyEnv, defaultModel: p.defaultModel || null, freeOnly: !!p.freeOnly })),
         model: cfg.model,
         caps: cfg.caps,
         runtime: { ok: !!check.ok, version: check.version || null, error: check.error || null },
@@ -128,10 +129,17 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
       if (body.provider !== undefined) {
         if (!cfgStore.PROVIDERS[body.provider]) return json(res, 400, { error: 'unknown provider' });
         // Credentials belong to the provider that issued them.
-        if (body.provider !== cfgStore.load().provider) patch.auth = null;
+        if (body.provider !== cfgStore.load().provider) {
+          patch.auth = null;
+          patch.model = null;
+        }
         patch.provider = body.provider;
       }
-      if (body.model !== undefined) patch.model = body.model ? String(body.model).slice(0, 80) : null;
+      if (body.model !== undefined) patch.model = body.model ? String(body.model).trim().slice(0, 80) || null : null;
+      if ((patch.provider || cfgStore.load().provider) === 'openrouter' &&
+          !isFreeModel((patch.model !== undefined ? patch.model : cfgStore.load().model) || OPENROUTER_MODEL)) {
+        return json(res, 400, { error: 'OpenRouter is free-only. Choose openrouter/free or an explicit model ID ending in :free.' });
+      }
       if (body.caps) {
         patch.caps = {
           perProfileDaily: Math.max(0, Math.min(200, +body.caps.perProfileDaily || 0)),

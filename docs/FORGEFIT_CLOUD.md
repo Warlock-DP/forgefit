@@ -1,106 +1,139 @@
-# ForgeFit cloud release
+# ForgeFit on Netlify + Neon
 
-ForgeFit is now set up as a lightweight installable web app (PWA) with one same-origin Node
-service. The browser downloads only the app shell; accounts, passkeys, workout history, plans,
-body-weight logs, and notification subscriptions can live in Neon Postgres.
+The selected cloud setup uses **Netlify for the frontend and backend functions**, **Neon for
+durable Postgres data**, and **OpenRouter free models for optional AI**. No Railway, Render
+server, virtual machine, persistent disk, local AI model, or GPU is required.
 
-## No-extra-cost first deployment: Netlify + Render Free + Neon
+The public frontend is [forgefit-rutvik.netlify.app](https://forgefit-rutvik.netlify.app/).
+Loading the login page does not prove that cloud saving, authentication, or AI is configured.
 
-The current frontend is `https://forgefit-rutvik.netlify.app`. Keep it on Netlify and keep
-the existing Neon database. Use `render.yaml` to create **one Free web service**, not a paid
-instance, disk, or Render database. Do not add a payment method or enable paid upgrades.
+## Private Netlify configuration
 
-1. Create a Render Blueprint from this repository's `render.yaml`.
-2. Provide Neon's pooled `DATABASE_URL` and direct `DATABASE_URL_UNPOOLED` privately in Render.
-   Render generates `SESSION_SECRET` once and preserves it. Do not rotate or replace it: it
-   signs sessions and encrypts the stored Coach credentials.
-3. Deploy. Startup applies the checked-in Drizzle migrations. In `EPHEMERAL_CLOUD=true` mode,
-   notification keys, encrypted Coach settings, and Coach proposal/history files are mirrored
-   into `forgefit_app_meta`, then restored before serving requests. Successful API responses
-   wait for this mirror; unchanged settings do not cause another database write.
-4. Set Netlify's `FORGEFIT_API_ORIGIN` to the Render HTTPS service URL, with **Functions** scope,
-   and redeploy Netlify. Keep `ORIGIN` and `RP_ID` on the Netlify hostname for passkeys/cookies.
-5. Verify `/api/health` reports `storage: "postgres"` and `runtimeStorage: "postgres"`, then
-   create the owner's profile, test saving/reopening workouts, and install from the phone browser.
+Use Project configuration → Environment variables. Never commit credentials or use frontend
+`VITE_*` variables for secrets. Mark database URLs and the signing secret as secret values.
 
-Render Free sleeps after 15 minutes without incoming traffic and can take about a minute to
-wake. Scheduled reminders/reviews are not guaranteed while it sleeps. Its monthly limits can
-pause the service or builds; with no payment method, do not upgrade to bypass those limits.
-The frontend and Neon also have free-plan limits. See [Render's free-plan documentation](https://render.com/docs/free).
+| Variable | Value/purpose |
+| --- | --- |
+| `DATABASE_URL` | Neon's pooled URL for runtime queries |
+| `DATABASE_URL_UNPOOLED` | Neon's direct URL for checked-in Drizzle migrations |
+| `SESSION_SECRET` | A random, stable secret of at least 32 characters |
+| `OWNER_SETUP_CODE` | A private, random 32-character uppercase code for the first administrator |
+| `ORIGIN` | `https://forgefit-rutvik.netlify.app` |
+| `RP_ID` | `forgefit-rutvik.netlify.app` |
+| `RP_NAME` | `ForgeFit` |
+| `INVITE_ONLY` | `true` (also the serverless implementation's default) |
+| `COACH_DISABLED` | `false` to allow admin setup; the Coach still starts off |
+| `SCHEDULED_NOTIFICATIONS_ENABLED` | `true` for 15-minute reminder/weekly-review checks; otherwise `false` |
 
-The first release sets `COACH_DISABLED=true`: **AI is not active and makes no paid model calls**.
-Review provider costs/limits separately before changing that setting. Codex's provider-owned
-ChatGPT login cache is intentionally not copied into Postgres; without a persistent disk its
-login is lost on restart. Persistent subscription-based AI sign-in needs a separate design,
-not a promise that free hosting includes free AI.
+Free Netlify accounts may not support separate variable scopes; do not upgrade for this.
+Use deploy-context values instead: production credentials only in production, isolated
+Neon branch credentials for previews, and empty unrelated/untrusted contexts. Preserve the
+approval requirement for untrusted deploys.
 
-## Optional persistent-server deployment: Railway
+Keep `SESSION_SECRET` unchanged. It signs cookies, pseudonymizes AI payloads and encrypts the
+OpenRouter key. After the first profile is created, a stored fingerprint detects accidental
+changes and fails closed.
 
-Use Netlify for the installable frontend, Railway for the persistent Node service and AI jobs,
-and Neon for Postgres. Netlify's Edge Function proxies `/api/*` to Railway, so the browser still
-sees one HTTPS hostname. That keeps WebAuthn/passkeys and host-only session cookies on the same
-origin without forcing the long-running API into a serverless runtime.
+Enter `OWNER_SETUP_CODE` in the first **Create new profile → Invite code** field, then finish
+the passkey prompt on your own device. The code cannot create a second administrator after an
+owner exists. The admin can issue ordinary single-use invitation codes. Do not publish the
+bootstrap code or passkeys.
 
-1. Push this ForgeFit source to a GitHub repository you control.
-2. Create a Netlify site from that repository. Netlify reads the root `netlify.toml`; the first
-   deploy can finish before the API is configured. Copy the resulting site URL and hostname.
-3. Create a Neon project and copy both connection strings:
-   - pooled connection → `DATABASE_URL`
-   - direct connection → `DATABASE_URL_UNPOOLED`
-4. Create a Railway service from the same repository. Railway detects `railway.toml` and builds the
-   root `Dockerfile`.
-5. Generate the Railway service domain, then set these Railway variables before adding a volume:
-   - `ORIGIN=https://your-site.netlify.app`
-   - `RP_ID=your-site.netlify.app` (hostname only; no `https://`)
-   - `RP_NAME=ForgeFit`
-   - `SESSION_SECRET` to a long, random, stable value
-   - the two Neon database variables above
-6. Add a Railway volume mounted at `/data` and deploy with those variables already set.
-   The first startup initializes `/data/secret` from `SESSION_SECRET`; subsequent startups require
-   the environment variable to match that persisted value. If reusing an existing volume, reuse
-   its secret rather than generating a different one.
-7. In Netlify, add `FORGEFIT_API_ORIGIN=https://your-railway-domain` with **Functions** scope and
-   trigger a new production deploy. The bundled Edge Function will proxy API traffic to Railway.
-8. Visit `https://your-site.netlify.app/api/health`; it should report a healthy API before creating
-   the first profile.
-9. Register the first profile. To make it the administrator, copy its id from the
-   `forgefit_app_meta` row with key `core`, set `ADMIN_UIDS` to that id, and redeploy.
-10. On the phone, open the Netlify HTTPS URL and choose **Add to Home Screen**. It installs like an app
-   without shipping the exercise library or database inside the APK.
+## Deployment and verification
 
-The startup command applies the checked-in Drizzle migrations. Runtime connections use Neon's
-pooled URL; migrations prefer the direct URL.
+1. Test the checked-in Drizzle migrations on a child branch of the existing production
+   database before production. Do not reset or overwrite production from a test branch.
+   The two existing tables are preserved; no destructive schema change is needed.
+2. Provide direct and pooled URLs for the appropriate environment. The Netlify build installs
+   backend dependencies, runs Drizzle migrations and builds the frontend. Without a database,
+   the frontend can build, but the API returns 503.
+3. Deploy from your repository. Three functions are deployed:
+   - `forgefit-api`: handles `/api/*`, passkeys, saved workouts, settings and admin routes.
+   - `forgefit-worker-background`: runs short-lived, server-signed AI jobs/rest alerts.
+   - `forgefit-scheduled`: checks reminders and automatic weekly reviews every 15 minutes.
+4. Verify `/api/health` returns HTTP 200 and `hosting: "netlify-functions"`, `storage: "neon"`
+   and `runtimeStorage: "neon"`. A 503 is not a completed backend deployment.
+5. Create the owner on the final HTTPS hostname. Verify passkey sign-out/sign-in, save/reload
+   a sample workout and check it from another signed-in device before importing real history.
+6. On your phone, open the HTTPS site and choose **Install app / Add to Home Screen**.
 
-### Simpler single-service alternative
+The superseded Edge proxy is archived in `api/legacy/netlify-api-proxy.js`; it is no longer
+deployed and `FORGEFIT_API_ORIGIN` is no longer needed. Docker and optional Render/Railway
+manifests remain for self-hosters, but are not used in this selected setup.
 
-Railway can also serve both the frontend and API directly from the root Dockerfile. That uses one
-service instead of Netlify plus Railway; set `ORIGIN` and `RP_ID` to the Railway or custom domain.
+## What lives where
 
-## AI choices
+Functions read and write Neon directly, without account/state caches or durable local files.
+Cross-instance transaction locks protect invitation redemption, credential counters, settings,
+and AI quotas. Passkey challenges expire after five minutes and are atomically consumed once.
+Browser mutations require same-origin JSON requests.
 
-The Coach is off until an administrator enables it in **Settings → Admin dashboard → AI Coach**.
-Each user also has to consent before workout data is sent to the selected model.
+Neon stores profiles, passkeys, workouts, plans, weigh-ins, notification subscriptions,
+stable push keys, encrypted AI credentials, proposals/jobs and short-lived presence records.
+Authenticated user/admin route checks govern access. Proposals are separate from synced client
+state so a normal device sync cannot erase them.
 
-- **Google Gemini**: paste a Gemini API key in the admin screen. The default is
-  `gemini-3.7-flash`, and the model name can be changed in the same screen. A consumer Gemini
-  subscription/login does not authorize server API calls, so API billing is separate.
-- **OpenAI Codex**: use the built-in device-code flow to sign in with an eligible ChatGPT
-  subscription. The private refreshable login cache stays in `/data/codex`. This is the current
-  project's existing CLI integration, not an OpenAI API key integration.
-- **Claude Code**: paste a Claude Code setup token.
-- **Fixture**: an offline test provider that makes no paid AI call.
+The PWA still keeps a local/offline copy and the current in-progress workout on the device.
+**Continue without account is device-only, not cloud backup.** Exercise media is loaded from
+the configured CDN. No huge media folder or AI model is installed on the phone.
 
-For a first private deployment, Gemini is the easiest API integration. Set a low per-user daily
-limit before inviting anyone else.
+## OpenRouter: optional and free-only
 
-## What remains local to the service
+In **Settings → Admin dashboard → AI Coach**, enable the Coach and add an OpenRouter API key
+through the private key form, never chat or GitHub. Save-and-test sends a synthetic JSON prompt,
+not workout history. Each user must separately consent before personal data is sent.
 
-Neon stores account metadata and workout state. The `/data` volume stores generated push keys,
-the session-secret copy, AI configuration, encrypted provider credentials, and short-lived Coach
-job results. Back up Neon and the Railway volume; neither belongs in the mobile install.
+`openrouter/free` is a router, not a single fixed AI. An explicit reviewed model ID ending in
+`:free` can be pinned instead. The Netlify backend only supports OpenRouter; the original
+Docker backend's subscription/CLI integrations are not deployed in functions.
 
-## Mobile packaging later
+Paid model IDs, paid fallback models and plugins are blocked. Before inference, pricing must
+be verifiably zero. Requests also set zero-price ceilings and disable provider fallback.
+Unavailable models, exhausted quotas or unverifiable pricing stop the request; nothing buys
+credits or upgrades automatically.
 
-The same frontend remains Capacitor-ready under `frontend/capacitor.config.json` with application
-id `com.forgefit.app`. A Play Store or App Store wrapper can be added later, but the PWA is the
-smallest and fastest first mobile release and already supports home-screen installation.
+[OpenRouter's free plan](https://openrouter.ai/pricing) currently allows 50 requests/day across
+the account. ForgeFit enforces 5 jobs/profile/day, 20 jobs/instance/day and 40 AI requests/day,
+including tests and one permitted JSON repair. Transactional counters survive forgetting the
+Coach. Usage in other apps can still exhaust the shared quota. Free availability is not promised.
+
+Payloads exclude login credentials, account identifiers and other users' data. Workout logs,
+weigh-ins, intake limitations and free text can still be personal information; pseudonyms do
+not make them anonymous. Review [provider privacy policies](https://openrouter.ai/docs/guides/privacy/provider-logging)
+before using real history. Retention/training policies vary: verify a privacy-compatible free
+endpoint before sending sensitive data and avoid medical notes in prompts.
+
+Workers claim a job once, so duplicate background delivery cannot duplicate inference. At most
+one JSON repair is made. A lost mid-execution job times out instead of silently re-running.
+The user reviews/applies proposals. Withdrawing consent clears the job/proposal and prevents
+later execution/completion. A server-side withdrawal timestamp also blocks stale offline
+snapshots from re-enabling sharing; a new explicit acceptance is required. Data already
+sent cannot be unsent.
+
+## Notifications and free-tier limits
+
+Stable VAPID keys and subscriptions live in Neon. Background rest alerts support up to
+14 minutes, below Netlify's 15-minute execution limit; cancelling/extending invalidates the
+old worker. On-screen timers work independently. Push delivery depends on the browser/OS.
+Sleeping workers consume compute credits, so leave cloud alerts off if not needed.
+
+Day reminders and weekly reviews are checked every 15 minutes in the user's timezone.
+They may arrive after the selected time, and outages/paused services can prevent delivery.
+A one-minute scan would keep Neon awake all month and undermine its free compute allowance.
+Workout-count AI reviews are event-driven on sync. The UI discloses timing and hides scheduled
+controls when the host disables them.
+
+[Netlify Free](https://www.netlify.com/pricing/) currently has a 300-credit monthly limit;
+Neon has separate compute/storage limits. Use Free plans, do not add a card, and do not enable
+paid upgrades or automatic top-ups. Services can pause at their limits. Free is not unlimited.
+
+## Local verification and mobile packaging
+
+From `api`: `npm test` and `npm run test:netlify`. The latter uses Netlify's real bundler
+without deployment or an AI call. From `frontend`: `npm test` and `npm run build`.
+Cold-start, invitation/session isolation, concurrent mutations, consent, quotas and duplicate
+worker tests use an isolated fake store/provider. Real Neon, passkey, sync, push and AI smoke
+tests are separate deployment checks, not conclusions inferred from unit tests.
+
+An APK can be packaged later from the Capacitor project. Its current native-only build is
+not the cloud-synced PWA; the PWA is the initial lightweight mobile release.

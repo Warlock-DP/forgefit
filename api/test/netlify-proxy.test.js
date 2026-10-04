@@ -3,7 +3,7 @@ import http from 'node:http'
 import test from 'node:test'
 import { once } from 'node:events'
 
-import apiProxy from '../../frontend/netlify/edge-functions/api-proxy.js'
+import apiProxy from '../legacy/netlify-api-proxy.js'
 
 test('Netlify proxy fails closed until configured, then forwards the API request', async t => {
   const previousNetlify = globalThis.Netlify

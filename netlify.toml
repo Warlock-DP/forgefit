@@ -1,12 +1,17 @@
 [build]
   base = "frontend"
-  command = "npm run build"
+  command = "npm ci --prefix ../api --omit=dev && npm run db:migrate --prefix ../api && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
   VITE_IMG_BASE = "https://cdn.jsdelivr.net/gh/hasaneyldrm/exercises-dataset@7455efae41b330c265e7cd4b78dfa848e7ce5ebd/images/"
   VITE_GIF_BASE = "https://cdn.jsdelivr.net/gh/hasaneyldrm/exercises-dataset@7455efae41b330c265e7cd4b78dfa848e7ce5ebd/videos/"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["../api/coach/prompts/*.md", "../api/coach/library.json"]
 
 # React Router runs in the browser. Static assets are served first; every other
 # non-API path falls back to the app shell.

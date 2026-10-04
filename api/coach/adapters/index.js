@@ -10,6 +10,7 @@ import { run } from './spawn.js';
 import { fileURLToPath } from 'node:url';
 import claude from './claude.js';
 import gemini from './gemini.js';
+import openrouter from './openrouter.js';
 import { CODEX_BIN } from './codex-cli.js';
 
 const CODEX_DISABLED_FEATURES = [
@@ -63,6 +64,6 @@ const fixture = {
   }
 };
 
-const ADAPTERS = { claude, codex, gemini, fixture };
+const ADAPTERS = { claude, codex, gemini, openrouter, fixture };
 export const adapterFor = provider => ADAPTERS[provider] || null;
 export default ADAPTERS;

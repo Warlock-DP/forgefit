@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { unprivilegedIds } from './adapters/spawn.js';
+import { DEFAULT_MODEL as OPENROUTER_MODEL } from './adapters/openrouter.js';
 
 const DATA = process.env.DATA_DIR || '/data';
 const FILE = path.join(DATA, 'coach.json');
@@ -31,6 +32,7 @@ export const PROVIDERS = {
   claude: { label: 'Claude Code', runtime: 'Claude Agent SDK', setupToken: true, apiKeyEnv: 'ANTHROPIC_API_KEY', oauthEnv: 'CLAUDE_CODE_OAUTH_TOKEN' },
   codex: { label: 'OpenAI Codex CLI', runtime: 'OpenAI Codex CLI', deviceLogin: true, apiKeyEnv: null, oauthEnv: null },
   gemini: { label: 'Google Gemini', runtime: 'Gemini API', apiKeyEnv: 'GEMINI_API_KEY', oauthEnv: null, defaultModel: 'gemini-3.7-flash' },
+  openrouter: { label: 'OpenRouter (free only)', runtime: 'OpenRouter API', apiKeyEnv: 'OPENROUTER_API_KEY', oauthEnv: null, defaultModel: OPENROUTER_MODEL, freeOnly: true },
   // Test-only: drives the in-repo fixture CLI. Selectable so an instance can be exercised
   // end-to-end (and demoed) without any AI account at all.
   fixture: { label: 'Fixture (testing)', runtime: 'Fixture', apiKeyEnv: null, oauthEnv: null }

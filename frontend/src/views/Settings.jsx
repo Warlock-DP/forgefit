@@ -287,6 +287,9 @@ function MobileReminderCard({ S, update, toast }) {
 }
 
 function PushCard({ S, update, toast }) {
+  const config = useStore(s => s.config)
+  const netlify = config?.hosting === 'netlify-functions'
+  const remindersAvailable = !netlify || config?.notifications?.scheduled
   const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
   const supported = pushSupported()
@@ -326,12 +329,17 @@ function PushCard({ S, update, toast }) {
       <Row icon="bell" iconTint="var(--red)" title={t('Push notifications')} subtitle={t('Rest-timer alerts, even if ForgeFit is closed.')}>
         <Switch checked={on} disabled={busy} onChange={toggle} />
       </Row>
-      {on && (
+      {on && netlify && <div className="dim small" style={{ margin: '8px 0', lineHeight: 1.5 }}>
+        Cloud rest alerts support up to 14 minutes. {remindersAvailable
+          ? 'Day reminders are checked every 15 minutes and may arrive after the selected time.'
+          : 'Day reminders are currently disabled by the host.'}
+      </div>}
+      {on && remindersAvailable && (
         <Row icon="calendar" iconTint="var(--orange)" title={t('Workout day reminder')}>
           <Switch checked={!!S.reminder?.on} onChange={() => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), on: !s.reminder?.on, tz: localTZ() } })} />
         </Row>
       )}
-      {on && S.reminder?.on && (
+      {on && remindersAvailable && S.reminder?.on && (
         <Row icon="clock" iconTint="var(--purple)" title={t('Reminder time')}>
           <input type="time" className="timef" value={S.reminder?.time || DEF.reminder.time}
             onChange={e => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), time: e.target.value, tz: localTZ() } })} />
@@ -344,11 +352,14 @@ function PushCard({ S, update, toast }) {
 
 function RegisterInline({ close, setUser, pushState, pullState, toast }) {
   const nameRef = useRef(null)
+  const [code, setCode] = useState('')
+  const inviteOnly = useStore(s => !!s.config?.invite_only)
   const go = async () => {
     const n = (nameRef.current.value || '').trim()
     if (!n) { toast(t('Enter a name')); return }
+    if (inviteOnly && !code.trim()) { toast(t('An invite code is required')); return }
     try {
-      const u = await passkeyRegister(n); setUser(u); close()
+      const u = await passkeyRegister(n, code.trim()); setUser(u); close()
       if (hasData(useStore.getState().S)) { await pushState(); toast(t('Profile created — data moved into it')) }
       else { await pullState(); toast(t('Welcome, {0}', u.name)) }
     } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Registration failed')) }
@@ -357,6 +368,8 @@ function RegisterInline({ close, setUser, pushState, pullState, toast }) {
     <h3>{t('Create your profile')}</h3>
     <div className="muted small" style={{ marginBottom: 14 }}>{t('Pick a name, then confirm with your device.')}</div>
     <TextField ref={nameRef} placeholder={t('Your name')} maxLength={40} />
+    {inviteOnly && <><div style={{ height: 10 }} /><TextField placeholder={t('Invite code')} maxLength={40}
+      value={code} onChange={e => setCode(e.target.value.toUpperCase())} /></>}
     <div style={{ height: 12 }} /><Button variant="primary" onClick={go}>{t('Create passkey')}</Button>
   </>
 }
