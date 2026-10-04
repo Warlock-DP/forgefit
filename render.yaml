@@ -1,0 +1,30 @@
+# Exactly one free web service. No paid disks or Render databases are provisioned.
+services:
+  - type: web
+    name: forgefit-api
+    runtime: docker
+    plan: free
+    repo: https://github.com/Warlock-DP/forgefit
+    branch: main
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: ./api
+    healthCheckPath: /api/health
+    envVars:
+      - key: ORIGIN
+        value: https://forgefit-rutvik.netlify.app
+      - key: RP_ID
+        value: forgefit-rutvik.netlify.app
+      - key: RP_NAME
+        value: ForgeFit
+      - key: EPHEMERAL_CLOUD
+        value: "true"
+      - key: COACH_DISABLED
+        value: "true"
+      - key: DB_POOL_SIZE
+        value: "2"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false

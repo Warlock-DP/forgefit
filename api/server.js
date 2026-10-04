@@ -13,6 +13,7 @@ import * as coachJobs from './coach/jobs.js';
 import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
 import { createStorage } from './storage.js';
+import { createRuntimeState } from './runtime-state.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -20,6 +21,7 @@ const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
 const RP_NAME = process.env.RP_NAME || 'ForgeFit';
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
+const EPHEMERAL_CLOUD = /^(1|true|yes|on)$/i.test(process.env.EPHEMERAL_CLOUD || '');
 // Admin dashboard (issue): admins are matched by uid; INVITE_ONLY gates new signups behind a
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -43,6 +45,9 @@ try { fs.chmodSync(DATA, 0o700); } catch { /* host filesystem says no — carry 
 /* ---------- secret + db ---------- */
 const secretFile = path.join(DATA, 'secret');
 const configuredSecret = String(process.env.SESSION_SECRET || '').trim();
+if (EPHEMERAL_CLOUD && (!process.env.DATABASE_URL || configuredSecret.length < 32)) {
+  throw new Error('EPHEMERAL_CLOUD requires DATABASE_URL and a stable SESSION_SECRET of at least 32 characters');
+}
 if (!fs.existsSync(secretFile)) fs.writeFileSync(secretFile, configuredSecret || crypto.randomBytes(32).toString('hex'), { mode: 0o600 });
 const SECRET = fs.readFileSync(secretFile, 'utf8').trim();
 if (configuredSecret && configuredSecret !== SECRET) {
@@ -50,6 +55,13 @@ if (configuredSecret && configuredSecret !== SECRET) {
 }
 
 const storage = await createStorage({ dataDir: DATA });
+const runtimeState = await createRuntimeState({ dataDir: DATA, storage, secret: SECRET, enabled: EPHEMERAL_CLOUD });
+coachConfig.reset();
+const checkpointLater = () => {
+  void runtimeState.checkpoint().catch(() => console.error('cloud runtime settings could not be saved'));
+};
+coachConfig.setPersistenceHook(checkpointLater);
+coachJobs.setPersistenceHook(checkpointLater);
 let db = await storage.loadDatabase();
 db.subs = db.subs || [];
 db.invites = db.invites || [];
@@ -228,9 +240,20 @@ setInterval(() => { for (const [k, v] of challenges) if (v.exp < Date.now()) cha
 
 /* ---------- helpers ---------- */
 function json(res, code, obj, extraHeaders) {
-  const body = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(extraHeaders || {}) });
-  res.end(body);
+  const respond = (status, value, headers = {}) => {
+    if (res.destroyed || res.headersSent) return;
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
+    res.end(JSON.stringify(value));
+  };
+  // A successful response must not acknowledge notification/Coach settings that have only
+  // reached Render's temporary filesystem. Unchanged snapshots cause no database write.
+  return runtimeState.checkpoint().then(
+    () => respond(code, obj, extraHeaders),
+    () => {
+      console.error('cloud runtime settings could not be saved');
+      respond(503, { error: 'server storage is temporarily unavailable' });
+    }
+  );
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -264,7 +287,7 @@ setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt 
 
 /* ---------- routes ---------- */
 const routes = {
-  'GET /api/health': async (req, res) => json(res, 200, { ok: true, app: 'ForgeFit', users: db.users.length, storage: storage.mode }),
+  'GET /api/health': async (req, res) => json(res, 200, { ok: true, app: 'ForgeFit', users: db.users.length, storage: storage.mode, runtimeStorage: runtimeState.mode }),
 
   // Public config the login screen needs before anyone is signed in. `coach` is absent unless
   // the instance has both switched the Coach on and successfully connected a provider — the
@@ -609,10 +632,12 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) json(res, 500, { error: 'server error' });
   }
 });
+await runtimeState.checkpoint();
 server.listen(PORT, () => console.log(`ForgeFit on :${PORT} (storage=${storage.mode}, rpID=${RP_ID}, origin=${ORIGIN})`));
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
   server.close();
+  await runtimeState.checkpoint();
   await storage.close();
   process.exit(0);
 });

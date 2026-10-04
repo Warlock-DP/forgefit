@@ -22,7 +22,7 @@ RUN apk add --no-cache bubblewrap libgcc libstdc++ \
  && adduser -S -G coach -H -s /sbin/nologin coach
 COPY --from=api-deps /app/node_modules ./node_modules
 COPY api/package.json api/package-lock.json* ./
-COPY api/server.js api/storage.js ./
+COPY api/server.js api/storage.js api/runtime-state.js ./
 COPY api/coach/ ./coach/
 COPY api/db/ ./db/
 COPY api/drizzle/ ./drizzle/

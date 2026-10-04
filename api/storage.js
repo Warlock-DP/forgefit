@@ -57,6 +57,16 @@ async function postgresStorage(connectionString) {
 
   return {
     mode: 'postgres',
+    async loadSetting(key) {
+      const rows = await database.select().from(appMeta).where(eq(appMeta.key, key)).limit(1);
+      return rows[0]?.value ?? null;
+    },
+    async saveSetting(key, value) {
+      if (key === 'core') throw new Error('use saveDatabase for account metadata');
+      const snapshot = structuredClone(value);
+      await enqueueWrite(() => database.insert(appMeta).values({ key, value: snapshot, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: appMeta.key, set: { value: snapshot, updatedAt: new Date() } }));
+    },
     async loadDatabase() {
       const rows = await database.select().from(appMeta).where(eq(appMeta.key, 'core')).limit(1);
       return { ...EMPTY_DB, ...(rows[0]?.value || {}) };

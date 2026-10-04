@@ -35,6 +35,8 @@ const HISTORY_MAX = 20;
 const safe = uid => String(uid).replace(/[^a-zA-Z0-9_-]/g, '');
 const userFile = uid => path.join(COACH_DIR, safe(uid) + '.json');
 const EMPTY = { daily: null, current: null, pending: null, history: [] };
+let persistenceHook = null;
+export function setPersistenceHook(fn) { persistenceHook = typeof fn === 'function' ? fn : null; }
 
 export function readUser(uid) {
   try { return { ...EMPTY, ...JSON.parse(fs.readFileSync(userFile(uid), 'utf8')) }; }
@@ -45,6 +47,7 @@ function writeUser(uid, rec) {
   const file = userFile(uid), tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(rec), { mode: 0o600 });
   fs.renameSync(tmp, file);
+  persistenceHook?.();
 }
 function patchUser(uid, patch) {
   const rec = { ...readUser(uid), ...patch };
@@ -54,6 +57,7 @@ function patchUser(uid, patch) {
 /** Consent revoked, profile deleted, "reset everything" — no server-side residue (FR-51). */
 export function clearUser(uid) {
   try { fs.unlinkSync(userFile(uid)); } catch { /* nothing to clear */ }
+  persistenceHook?.();
 }
 
 function readFileState(uid) {
@@ -339,6 +343,7 @@ export function resolvePending(uid, { accepted = [], rejected = [], dismissed = 
 
 /** A2's "Test the Coach": the real adapter, a trivial round-trip, no user data anywhere near it. */
 export async function testRun() {
+  if (cfgStore.COACH_DISABLED) return { ok: false, error: 'AI is disabled by the host configuration' };
   const cfg = cfgStore.load();
   const adapter = adapterFor(cfg.provider);
   if (!adapter) return { ok: false, error: 'no provider configured' };

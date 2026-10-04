@@ -2,10 +2,10 @@ const WITHOUT_BODY = new Set(['GET', 'HEAD'])
 
 /**
  * Keep the browser on the Netlify origin while the persistent ForgeFit API runs
- * on Railway. This is important for host-only session cookies and WebAuthn.
+ * on Render or Railway. This is important for host-only session cookies and WebAuthn.
  *
  * Configure FORGEFIT_API_ORIGIN in Netlify with Functions scope, for example:
- * https://forgefit-api-production.up.railway.app
+ * https://forgefit-api.onrender.com
  */
 export default async function apiProxy(request) {
   const configuredOrigin = Netlify.env.get('FORGEFIT_API_ORIGIN')?.trim()

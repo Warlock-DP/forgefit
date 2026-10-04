@@ -4,7 +4,37 @@ ForgeFit is now set up as a lightweight installable web app (PWA) with one same-
 service. The browser downloads only the app shell; accounts, passkeys, workout history, plans,
 body-weight logs, and notification subscriptions can live in Neon Postgres.
 
-## Recommended first deployment
+## No-extra-cost first deployment: Netlify + Render Free + Neon
+
+The current frontend is `https://forgefit-rutvik.netlify.app`. Keep it on Netlify and keep
+the existing Neon database. Use `render.yaml` to create **one Free web service**, not a paid
+instance, disk, or Render database. Do not add a payment method or enable paid upgrades.
+
+1. Create a Render Blueprint from this repository's `render.yaml`.
+2. Provide Neon's pooled `DATABASE_URL` and direct `DATABASE_URL_UNPOOLED` privately in Render.
+   Render generates `SESSION_SECRET` once and preserves it. Do not rotate or replace it: it
+   signs sessions and encrypts the stored Coach credentials.
+3. Deploy. Startup applies the checked-in Drizzle migrations. In `EPHEMERAL_CLOUD=true` mode,
+   notification keys, encrypted Coach settings, and Coach proposal/history files are mirrored
+   into `forgefit_app_meta`, then restored before serving requests. Successful API responses
+   wait for this mirror; unchanged settings do not cause another database write.
+4. Set Netlify's `FORGEFIT_API_ORIGIN` to the Render HTTPS service URL, with **Functions** scope,
+   and redeploy Netlify. Keep `ORIGIN` and `RP_ID` on the Netlify hostname for passkeys/cookies.
+5. Verify `/api/health` reports `storage: "postgres"` and `runtimeStorage: "postgres"`, then
+   create the owner's profile, test saving/reopening workouts, and install from the phone browser.
+
+Render Free sleeps after 15 minutes without incoming traffic and can take about a minute to
+wake. Scheduled reminders/reviews are not guaranteed while it sleeps. Its monthly limits can
+pause the service or builds; with no payment method, do not upgrade to bypass those limits.
+The frontend and Neon also have free-plan limits. See [Render's free-plan documentation](https://render.com/docs/free).
+
+The first release sets `COACH_DISABLED=true`: **AI is not active and makes no paid model calls**.
+Review provider costs/limits separately before changing that setting. Codex's provider-owned
+ChatGPT login cache is intentionally not copied into Postgres; without a persistent disk its
+login is lost on restart. Persistent subscription-based AI sign-in needs a separate design,
+not a promise that free hosting includes free AI.
+
+## Optional persistent-server deployment: Railway
 
 Use Netlify for the installable frontend, Railway for the persistent Node service and AI jobs,
 and Neon for Postgres. Netlify's Edge Function proxies `/api/*` to Railway, so the browser still

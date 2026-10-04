@@ -21,6 +21,7 @@ RUN npm ci --omit=dev --include=optional \
  && ./node_modules/.bin/codex --version
 COPY server.js ./
 COPY storage.js ./
+COPY runtime-state.js ./
 COPY coach/ ./coach/
 COPY db/ ./db/
 COPY drizzle/ ./drizzle/

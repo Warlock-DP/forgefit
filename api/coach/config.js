@@ -74,6 +74,8 @@ export function decrypt(blob) {
 /* ---------- load / save ---------- */
 
 let cache = null;
+let persistenceHook = null;
+export function setPersistenceHook(fn) { persistenceHook = typeof fn === 'function' ? fn : null; }
 function atomicWrite(file, content, mode) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, content, mode ? { mode } : undefined);
@@ -97,6 +99,7 @@ export function save(patch) {
   const next = { ...load(), ...patch };
   cache = next;
   atomicWrite(FILE, JSON.stringify(next, null, 2), 0o600);
+  persistenceHook?.();
   return next;
 }
 // Test seam: forget the in-memory copy so the next load() re-reads from disk.
