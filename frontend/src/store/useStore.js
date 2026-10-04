@@ -92,6 +92,12 @@ export const useStore = create((set, get) => {
     // the app hangs off it, so an unconfigured instance renders exactly what it always did.
     config: null,
 
+    async refreshConfig() {
+      const config = await api('/api/config')
+      set({ config })
+      return config
+    },
+
     // Mutate a draft of S via producer fn, then persist + schedule sync.
     update(mut, push = true) {
       const S = clone(get().S)
@@ -181,7 +187,7 @@ export const useStore = create((set, get) => {
         return
       }
       // Instance capabilities are public and needed whether or not anyone is signed in.
-      try { set({ config: await api('/api/config') }) } catch (e) { /* offline — assume nothing extra */ }
+      try { await get().refreshConfig() } catch (e) { /* offline — assume nothing extra */ }
       try {
         const me = await api('/api/me')
         get().setUser(me.user)

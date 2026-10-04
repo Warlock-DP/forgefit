@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useUI } from '../store/useUI.js'
+import { useStore } from '../store/useStore.js'
 import { api } from '../lib/api.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Switch, TextField } from '../components/ui.jsx'
@@ -25,8 +26,16 @@ export default function AdminCoach() {
   const openSheet = useUI(s => s.openSheet)
   const [d, setD] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
-  const load = () => api('/api/admin/coach').then(setD).catch(e => toast(e.message || 'Failed to load'))
+  const load = async () => {
+    setLoadError('')
+    try {
+      setD(await api('/api/admin/coach'))
+      // Enabling/disconnecting should update Home and Settings without a page reload.
+      await useStore.getState().refreshConfig().catch(() => {})
+    } catch (e) { setLoadError(e.message || 'Failed to load Coach settings') }
+  }
   useEffect(() => { load() }, [])
 
   const patch = async body => {
@@ -51,7 +60,18 @@ export default function AdminCoach() {
     setBusy(false)
   }
 
-  if (!d) return <div className="card"><div className="muted small">Loading Coach status…</div></div>
+  if (!d) return <div className="card">{loadError ? <>
+    <div role="alert" className="small" style={{ color: 'var(--red)', marginBottom: 10 }}>{loadError}</div>
+    <Button size="sm" onClick={load}>Retry</Button>
+  </> : <div className="muted small">Loading Coach status…</div>}</div>
+
+  return <>
+    {loadError && <div role="alert" className="card small" style={{ color: 'var(--red)' }}>{loadError}</div>}
+    <CoachConfiguration d={d} busy={busy} patch={patch} test={test} disconnect={disconnect} load={load} openSheet={openSheet} />
+  </>
+}
+
+export function CoachConfiguration({ d, busy, patch, test, disconnect, load, openSheet }) {
 
   if (d.disabledByEnv) return <div className="card">
     <h2 style={{ margin: '0 0 6px' }}>AI Coach</h2>
@@ -65,12 +85,11 @@ export default function AdminCoach() {
   return <div className="card" style={{ borderColor: live ? 'var(--acc)' : undefined }}>
     <div className="row between" style={{ marginBottom: 8 }}>
       <h2 style={{ margin: 0 }}>AI Coach</h2>
-      <Switch checked={!!d.enabled} disabled={busy} onChange={v => patch({ enabled: v })} />
+      <Switch label="Enable AI Coach" checked={!!d.enabled} disabled={busy} onChange={v => patch({ enabled: v })} />
     </div>
 
-    {!d.enabled && <div className="muted small">Off. Users see no Coach anywhere in the app.</div>}
+    {!d.enabled && <div className="muted small" style={{ marginBottom: 10 }}>Coach is off. Configure and test your provider below before enabling it.</div>}
 
-    {d.enabled && <>
       <div className="tiles" style={{ textAlign: 'left', marginBottom: 10 }}>
         <div className="tile"><div className="l">Runtime</div>
           <div className="v" style={{ fontSize: '.9rem', color: d.runtime.ok ? 'var(--green)' : 'var(--red)' }}>{d.runtime.ok ? 'ready' : 'missing'}</div></div>
@@ -97,8 +116,10 @@ export default function AdminCoach() {
           <div className="small muted" style={{ marginBottom: 8 }}>
             Connected{d.auth.account ? ' as ' + d.auth.account : ''} via {credentialLabel(d.auth.type)} · {rel(d.auth.connectedAt)}
           </div>
-          <div className="row" style={{ gap: 8 }}>
-            <Button size="sm" icon="check" disabled={busy} onClick={test}>Test the Coach</Button>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <Button size="sm" icon="check" disabled={busy} onClick={test}>Test connection</Button>
+            {meta.apiKey && !meta.setupToken && <Button size="sm" icon="key" disabled={busy}
+              onClick={() => openSheet(close => <ApiKeySheet close={close} onDone={load} label={meta.label} freeOnly={meta.freeOnly} />)}>Replace API key</Button>}
             <Button size="sm" danger disabled={busy} onClick={disconnect}>Disconnect</Button>
           </div>
         </> : <>
@@ -107,7 +128,7 @@ export default function AdminCoach() {
             The old Claude credential is no longer used. Add a Claude Code setup token instead.
           </div>}
           {d.auth?.state === 'unreadable' && <div className="small" style={{ color: 'var(--red)', marginBottom: 8 }}>
-            The stored credential can't be decrypted — this usually means ./data was restored without its <code>secret</code> file. Connect again.
+            The stored credential can't be decrypted. Check the host's signing-secret configuration, then connect again.
           </div>}
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {meta.setupToken && <Button size="sm" variant="primary" icon="key" disabled={busy}
@@ -115,7 +136,7 @@ export default function AdminCoach() {
             {meta.deviceLogin && <Button size="sm" variant="primary" icon="key" disabled={busy}
               onClick={() => openSheet(close => <ChatGPTLoginSheet close={close} onDone={load} label={meta.label} />)}>Sign in with ChatGPT</Button>}
             {meta.apiKey && !meta.setupToken && <Button size="sm" icon="lock" disabled={busy}
-              onClick={() => openSheet(close => <ApiKeySheet close={close} onDone={load} label={meta.label} />)}>Use an API key</Button>}
+              onClick={() => openSheet(close => <ApiKeySheet close={close} onDone={load} label={meta.label} freeOnly={meta.freeOnly} />)}>Add API key</Button>}
           </div>
         </>}
       </>}
@@ -124,10 +145,10 @@ export default function AdminCoach() {
       <h4 className="sec">Limits</h4>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
         <label className="small muted">Per user / day
-          <input className="num" type="number" min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.perProfileDaily || 200} defaultValue={d.caps.perProfileDaily} style={{ width: 70, marginLeft: 8 }}
+          <input className="num" type="number" disabled={busy} min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.perProfileDaily || 200} defaultValue={d.caps.perProfileDaily} style={{ width: 70, marginLeft: 8 }}
             onBlur={e => patch({ caps: { ...d.caps, perProfileDaily: +e.target.value } })} /></label>
         <label className="small muted">Whole instance / day
-          <input className="num" type="number" min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.instanceDaily || 5000} defaultValue={d.caps.instanceDaily} style={{ width: 70, marginLeft: 8 }}
+          <input className="num" type="number" disabled={busy} min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.instanceDaily || 5000} defaultValue={d.caps.instanceDaily} style={{ width: 70, marginLeft: 8 }}
             onBlur={e => patch({ caps: { ...d.caps, instanceDaily: +e.target.value } })} /></label>
       </div>
       <div className="dim small" style={{ marginBottom: 10 }}>{d.hardCaps
@@ -135,10 +156,10 @@ export default function AdminCoach() {
         : '0 = no limit. Every job is one session on your provider account.'}</div>
 
       <h4 className="sec">Model</h4>
-      <TextField key={d.provider + ':' + (d.model || '')} defaultValue={d.model || ''} placeholder={meta.defaultModel || '(the provider default)'}
+      <TextField aria-label={meta.freeOnly ? 'OpenRouter free model' : 'AI model'} disabled={busy} key={d.provider + ':' + (d.model || '')} defaultValue={d.model || ''} placeholder={meta.defaultModel || '(the provider default)'}
         onBlur={e => e.target.value !== (d.model || '') && patch({ model: e.target.value })} />
       {meta.freeOnly && <div className="dim small" style={{ marginTop: 8, lineHeight: 1.5 }}>
-        Free models only. Paid models and paid fallbacks are blocked. OpenRouter currently allows 50 free requests per day across the account; tests and repair attempts also count. A job can use two requests.
+        Use <code>openrouter/free</code> for automatic free-model selection, or an explicit model ID ending in <code>:free</code>. Paid models and paid fallbacks are blocked. OpenRouter's free-model limits also apply; tests and repair attempts count. A job can use two requests.
         <br />OpenRouter routes prompts to external model providers, whose retention and training policies vary. Review <a href="https://openrouter.ai/docs/guides/privacy/provider-logging" target="_blank" rel="noopener noreferrer">provider privacy policies</a> before enabling personal workout reviews.
       </div>}
 
@@ -158,7 +179,6 @@ export default function AdminCoach() {
           </span>
         </div>)}
       </>}
-    </>}
   </div>
 }
 
@@ -253,27 +273,36 @@ function ChatGPTLoginSheet({ close, onDone, label }) {
   </>
 }
 
-function ApiKeySheet({ close, onDone, label }) {
+export function ApiKeySheet({ close, onDone, label, freeOnly }) {
   const toast = useUI(s => s.toast)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const save = async () => {
     setBusy(true)
+    setNotice('')
     try {
       const r = await api('/api/admin/coach/auth/key', { method: 'POST', body: JSON.stringify({ key: key.trim() }) })
       setKey('')
       toast(r.test?.ok ? 'Key saved ✅' : 'Saved, but the test failed: ' + (r.test?.error || ''))
-      close(); onDone()
+      await onDone()
+      if (r.test?.ok) close()
+      else setNotice('Your key was saved securely, but the connection test failed: ' + (r.test?.error || 'Please retry the connection test.'))
     } catch (e) { toast(e.message); setBusy(false) }
+    setBusy(false)
   }
-  return <>
+  return <form onSubmit={e => { e.preventDefault(); if (!busy && key.trim()) save() }}>
     <h3>{label} API key</h3>
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
       Stored encrypted on this server. Only the server uses it to authenticate with your selected AI provider; it is never returned to the browser or shown again.
     </div>
-    <TextField value={key} autoFocus type="password" placeholder="paste API key" onChange={e => setKey(e.target.value)} />
+    {freeOnly && <p className="dim small" style={{ lineHeight: 1.5 }}>Saving runs a small free-model connection test, without any of your workout data. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">Get an OpenRouter key</a>.</p>}
+    <TextField aria-label={`${label} API key`} value={key} autoFocus type="password" autoComplete="off" spellCheck={false} required minLength={16} maxLength={512} disabled={busy}
+      placeholder={freeOnly ? 'sk-or-…' : 'paste API key'} onChange={e => setKey(e.target.value)} />
+    {notice && <p role="alert" className="small" style={{ color: 'var(--orange)', lineHeight: 1.5 }}>{notice}</p>}
     <div style={{ height: 12 }} />
-    <Button variant="primary" disabled={busy || !key.trim()} onClick={save}>Save key</Button>
+    <Button type="submit" variant="primary" disabled={busy || !key.trim()}>{busy ? 'Saving and testing…' : 'Save key and test'}</Button>
+    {notice && <Button type="button" onClick={close}>Done</Button>}
     <div style={{ height: 8 }} />
-  </>
+  </form>
 }
