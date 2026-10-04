@@ -152,6 +152,7 @@ function ConsentCard({ onDone }) {
   const openSheet = useUI(s => s.openSheet)
   const [info, setInfo] = useState(null)
   useEffect(() => { disclosure().then(setInfo).catch(() => {}) }, [])
+  const viaOpenRouter = (info?.provider || config?.coach?.provider) === 'openrouter'
 
   const agree = () => {
     update(s => { s.coach = { ...(s.coach || emptyCoach()), consent: { agreedAt: new Date().toISOString(), version: CONSENT_VERSION } } })
@@ -162,10 +163,15 @@ function ConsentCard({ onDone }) {
   const open = () => openSheet(close => <>
     <h3>{t('Before the Coach starts')}</h3>
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
-      {t('When you ask for a plan or a review, this instance sends the following to {0}, running on this server under the instance owner’s account.',
-        info?.providerLabel || config?.coach?.providerLabel || t('the configured AI provider'))}
+      {viaOpenRouter
+        ? 'When you ask for a plan or review, ForgeFit sends the following to OpenRouter using the instance owner’s account. An external model provider generates the answer.'
+        : t('When you ask for a plan or a review, this instance sends the following to {0}, running on this server under the instance owner’s account.',
+          info?.providerLabel || config?.coach?.providerLabel || t('the configured AI provider'))}
     </div>
     <div className="sect-b">
+      {viaOpenRouter && <div className="small" style={{ color: 'var(--yellow)', lineHeight: 1.5, marginBottom: 12 }}>
+        OpenRouter sends these details to an external model provider. The free router can choose different models, and their data retention and training policies vary. Avoid names, contact details, and sensitive medical information in notes. <a href="https://openrouter.ai/docs/guides/privacy/provider-logging" target="_blank" rel="noopener noreferrer">Review provider privacy policies</a> before continuing.
+      </div>}
       {(info?.categories || Object.keys(CATEGORY_TEXT)).map(k => {
         const [title, sub] = CATEGORY_TEXT[k] || [k, '']
         return <div key={k} className="lrow">
@@ -192,7 +198,9 @@ function ConsentCard({ onDone }) {
       <div className="big" style={{ fontSize: 20 }}>{t('Meet the Coach')}</div>
     </div>
     <div className="muted small" style={{ marginBottom: 12, lineHeight: 1.5 }}>
-      {t('An AI coach that can design your plan and adjust it from what you actually log. It runs on this server, it never changes anything without your say-so, and it is off until you turn it on.')}
+      {viaOpenRouter
+        ? 'An AI coach that can design your plan and suggest adjustments based on your logs. OpenRouter connects it to a cloud AI model. It never applies changes without your approval and is off until you consent.'
+        : t('An AI coach that can design your plan and adjust it from what you actually log. It runs on this server, it never changes anything without your say-so, and it is off until you turn it on.')}
     </div>
     <Button variant="primary" icon="sparkles" onClick={open}>{t('See what it would use')}</Button>
   </div>
@@ -232,6 +240,9 @@ function StatusCard({ job, pending, nav }) {
 /* ---------------------------------- cadence ---------------------------------- */
 
 function CadenceCard({ coach, update }) {
+  const config = useStore(s => s.config)
+  const netlify = config?.hosting === 'netlify-functions'
+  const weeklyAvailable = !netlify || config?.coach?.scheduling
   const cadence = coach.cadence && coach.cadence !== 'off' ? coach.cadence : null
   const mode = !cadence ? 'off' : cadence.weekly ? 'weekly' : 'every'
   const setMode = m => update(s => {
@@ -244,11 +255,14 @@ function CadenceCard({ coach, update }) {
     footer={mode === 'off'
       ? t('Off — the Coach only looks when you ask it to.')
       : t('You are only notified when the Coach actually has something to suggest.')}>
+    {netlify && <div className="dim small" style={{ marginBottom: 10 }}>{weeklyAvailable
+      ? 'Cloud weekly reviews are checked every 15 minutes, so they may start after the selected time.'
+      : 'Weekly background reviews are disabled by the host. Manual and workout-count reviews are available.'}</div>}
     <SelectRow icon="clock" iconTint="var(--purple)" title={t('When')}
       value={mode} onChange={setMode}
       options={[
         { value: 'off', label: t('Off') },
-        { value: 'weekly', label: t('Weekly'), subtitle: t('On a day and time you choose') },
+        ...(weeklyAvailable ? [{ value: 'weekly', label: t('Weekly'), subtitle: t('On a day and time you choose') }] : []),
         { value: 'every', label: t('After every few workouts'), subtitle: t('As soon as you have logged enough') }
       ]} />
     {mode === 'weekly' && <>

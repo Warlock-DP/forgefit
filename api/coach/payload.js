@@ -13,11 +13,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import library from './library.json' with { type: 'json' };
 
 const DATA = process.env.DATA_DIR || '/data';
-const require_ = createRequire(import.meta.url);
-const LIBRARY = require_('./library.json').exercises;
+const LIBRARY = library.exercises;
 const LIB_BY_ID = new Map(LIBRARY.map(e => [e.id, e]));
 
 export const CONTRACT = 1;
@@ -38,8 +37,8 @@ export const DATA_CATEGORIES = [
 ];
 
 /** Stable per-profile pseudonym. Never the uid, never reversible, same across jobs. */
-function handle(uid) {
-  const secret = fs.readFileSync(path.join(DATA, 'secret'), 'utf8').trim();
+function handle(uid, configuredSecret) {
+  const secret = configuredSecret || fs.readFileSync(path.join(DATA, 'secret'), 'utf8').trim();
   return crypto.createHmac('sha256', secret).update('coach-handle:' + uid).digest('base64url').slice(0, 16);
 }
 
@@ -245,7 +244,7 @@ export function build(S, uid, opts = {}) {
     coach_contract: CONTRACT,
     task: opts.kind === 'review' ? 'review' : 'create',
     meta: {
-      profile: handle(uid),
+      profile: handle(uid, opts.secret),
       lang: S.lang || 'en',
       unit: S.unit || 'kg',
       effortScale: effortOf(S),

@@ -30,11 +30,12 @@ Install it from your browser, keep the data in your own Neon database, and choos
 > ### 🤖 ForgeFit is built from openGym
 >
 > A fork of [DuarteSantos8/openGym](https://github.com/DuarteSantos8/openGym) with ForgeFit
-> branding, cloud-ready Neon storage, Netlify + Railway deployment, and an optional AI that
+> branding, cloud-ready Neon storage, Netlify Functions deployment, and an optional AI that
 > **designs** your training plan and **revises it from what you actually log**.
 >
-> The Coach can use Google Gemini, OpenAI Codex, Claude Code, or the offline test fixture. It is
-> off until an administrator enables it and each user gives consent.
+> The Netlify backend uses free-only OpenRouter. The optional Docker backend also supports
+> Google Gemini, OpenAI Codex, Claude Code, and an offline test fixture. The Coach is off until
+> an administrator enables it and each user gives consent.
 >
 > **→ [What it does and how to use it](docs/AI_COACH.md)** ·
 > [ForgeFit cloud deployment](docs/FORGEFIT_CLOUD.md) ·
@@ -58,7 +59,8 @@ Install it from your browser, keep the data in your own Neon database, and choos
 
 ### ForgeFit cloud release in progress
 
-The public Netlify address will be added here after the first production deployment.
+The frontend is at [forgefit-rutvik.netlify.app](https://forgefit-rutvik.netlify.app/).
+Cloud sign-in, saving and AI require the private setup described in the deployment guide.
 
 </div>
 

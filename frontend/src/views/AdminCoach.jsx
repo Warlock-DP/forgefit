@@ -124,17 +124,23 @@ export default function AdminCoach() {
       <h4 className="sec">Limits</h4>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
         <label className="small muted">Per user / day
-          <input className="num" type="number" min="0" max="200" defaultValue={d.caps.perProfileDaily} style={{ width: 70, marginLeft: 8 }}
+          <input className="num" type="number" min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.perProfileDaily || 200} defaultValue={d.caps.perProfileDaily} style={{ width: 70, marginLeft: 8 }}
             onBlur={e => patch({ caps: { ...d.caps, perProfileDaily: +e.target.value } })} /></label>
         <label className="small muted">Whole instance / day
-          <input className="num" type="number" min="0" max="5000" defaultValue={d.caps.instanceDaily} style={{ width: 70, marginLeft: 8 }}
+          <input className="num" type="number" min={d.hardCaps ? '1' : '0'} max={d.hardCaps?.instanceDaily || 5000} defaultValue={d.caps.instanceDaily} style={{ width: 70, marginLeft: 8 }}
             onBlur={e => patch({ caps: { ...d.caps, instanceDaily: +e.target.value } })} /></label>
       </div>
-      <div className="dim small" style={{ marginBottom: 10 }}>0 = no limit. Every job is one session on your provider account.</div>
+      <div className="dim small" style={{ marginBottom: 10 }}>{d.hardCaps
+        ? `Free-hosting limits: at most ${d.hardCaps.perProfileDaily} jobs per user, ${d.hardCaps.instanceDaily} jobs and ${d.hardCaps.requestsDaily} API requests for the whole instance per day. Tests and repairs count too.`
+        : '0 = no limit. Every job is one session on your provider account.'}</div>
 
       <h4 className="sec">Model</h4>
-      <TextField defaultValue={d.model || ''} placeholder="(the provider default)"
+      <TextField key={d.provider + ':' + (d.model || '')} defaultValue={d.model || ''} placeholder={meta.defaultModel || '(the provider default)'}
         onBlur={e => e.target.value !== (d.model || '') && patch({ model: e.target.value })} />
+      {meta.freeOnly && <div className="dim small" style={{ marginTop: 8, lineHeight: 1.5 }}>
+        Free models only. Paid models and paid fallbacks are blocked. OpenRouter currently allows 50 free requests per day across the account; tests and repair attempts also count. A job can use two requests.
+        <br />OpenRouter routes prompts to external model providers, whose retention and training policies vary. Review <a href="https://openrouter.ai/docs/guides/privacy/provider-logging" target="_blank" rel="noopener noreferrer">provider privacy policies</a> before enabling personal workout reviews.
+      </div>}
 
       {d.lastError && <>
         <h4 className="sec">Last failure</h4>
@@ -255,6 +261,7 @@ function ApiKeySheet({ close, onDone, label }) {
     setBusy(true)
     try {
       const r = await api('/api/admin/coach/auth/key', { method: 'POST', body: JSON.stringify({ key: key.trim() }) })
+      setKey('')
       toast(r.test?.ok ? 'Key saved ✅' : 'Saved, but the test failed: ' + (r.test?.error || ''))
       close(); onDone()
     } catch (e) { toast(e.message); setBusy(false) }
@@ -262,7 +269,7 @@ function ApiKeySheet({ close, onDone, label }) {
   return <>
     <h3>{label} API key</h3>
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
-      Stored encrypted on this server and passed to the provider runtime only while a job runs. It is never shown again and never leaves the server.
+      Stored encrypted on this server. Only the server uses it to authenticate with your selected AI provider; it is never returned to the browser or shown again.
     </div>
     <TextField value={key} autoFocus type="password" placeholder="paste API key" onChange={e => setKey(e.target.value)} />
     <div style={{ height: 12 }} />
