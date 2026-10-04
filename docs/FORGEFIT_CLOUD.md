@@ -19,13 +19,16 @@ origin without forcing the long-running API into a serverless runtime.
    - direct connection → `DATABASE_URL_UNPOOLED`
 4. Create a Railway service from the same repository. Railway detects `railway.toml` and builds the
    root `Dockerfile`.
-5. Add a Railway volume mounted at `/data`.
-6. Generate the Railway service domain, then set these Railway variables:
+5. Generate the Railway service domain, then set these Railway variables before adding a volume:
    - `ORIGIN=https://your-site.netlify.app`
    - `RP_ID=your-site.netlify.app` (hostname only; no `https://`)
    - `RP_NAME=ForgeFit`
    - `SESSION_SECRET` to a long, random, stable value
    - the two Neon database variables above
+6. Add a Railway volume mounted at `/data` and deploy with those variables already set.
+   The first startup initializes `/data/secret` from `SESSION_SECRET`; subsequent startups require
+   the environment variable to match that persisted value. If reusing an existing volume, reuse
+   its secret rather than generating a different one.
 7. In Netlify, add `FORGEFIT_API_ORIGIN=https://your-railway-domain` with **Functions** scope and
    trigger a new production deploy. The bundled Edge Function will proxy API traffic to Railway.
 8. Visit `https://your-site.netlify.app/api/health`; it should report a healthy API before creating
