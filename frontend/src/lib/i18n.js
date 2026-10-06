@@ -24,6 +24,8 @@ let lang = 'en'
 let dict = {}
 let instr = null            // { exId: [steps] } for the current language, null = English
 let version = 0
+let request = 0
+let loading = null
 const subs = new Set()
 const notify = () => { version++; subs.forEach(f => f()) }
 
@@ -39,18 +41,38 @@ export function t(s, ...args) {
 // Instructions for an exercise in the current language (English steps as fallback).
 export const instrFor = ex => (instr && instr[ex.id]) || ex.st || []
 
-export async function setLang(l) {
+export function setLang(l) {
   if (!LANGS[l]) l = 'en'
-  if (l === lang && version > 0) return
-  lang = l
-  try {
-    dict = l === 'en' ? {} : (await localePacks['../locales/' + l + '.js']()).default
-    instr = l === 'en' || !INSTR_LANGS.includes(l) ? null : (await instrPacks['../instr/' + l + '.js']()).default
-  } catch (e) { dict = {}; instr = null }
-  notify()
+  if (loading?.lang === l) return loading.promise
+  const id = ++request
+  loading = null
+  // English (including an invalid language) must invalidate an older lazy import
+  // even when English is already the committed language.
+  if (l === lang && version > 0) return Promise.resolve()
+  if (l === 'en') {
+    lang = l; dict = {}; instr = null; notify()
+    return Promise.resolve()
+  }
+  const promise = (async () => {
+    let nextDict = {}, nextInstr = null
+    try {
+      const [ui, instructions] = await Promise.all([
+        localePacks['../locales/' + l + '.js'](),
+        INSTR_LANGS.includes(l) ? instrPacks['../instr/' + l + '.js']() : null,
+      ])
+      nextDict = ui.default; nextInstr = instructions?.default || null
+    } catch { /* Keep the existing English fallback for an unavailable pack. */ }
+    if (id !== request) return
+    // Publish the language, UI and instructions together, never a mixture of two
+    // requests. An obsolete success or rejection cannot change the current UI.
+    lang = l; dict = nextDict; instr = nextInstr; loading = null
+    notify()
+  })()
+  loading = { lang: l, promise }
+  return promise
 }
 
 // Re-renders the subscribing component (and its children) whenever the language changes.
 export function useLang() {
-  return useSyncExternalStore(fn => { subs.add(fn); return () => subs.delete(fn) }, () => version)
+  return useSyncExternalStore(fn => { subs.add(fn); return () => subs.delete(fn) }, () => version, () => version)
 }

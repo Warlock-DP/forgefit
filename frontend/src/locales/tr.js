@@ -1,5 +1,7 @@
 // Turkish UI strings. Keys are the English source strings (see lib/i18n.js).
+import walkthrough from './walkthrough/tr.js'
 export default {
+  ...walkthrough,
   'Confirm': 'Onayla',
   'Cancel': 'İptal',
   'Delete': 'Sil',

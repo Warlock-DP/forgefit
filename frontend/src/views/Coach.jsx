@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, DEF } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { t } from '../lib/i18n.js'
-import { fmtDate } from '../lib/format.js'
+import { fmtDate, fmtTimestamp } from '../lib/format.js'
 import { DEMO } from '../lib/demo.js'
 import { MOBILE } from '../lib/mobile.js'
 import {
@@ -11,7 +11,7 @@ import {
   canRevert, revertLast, changeTitle, recordDismissal
 } from '../lib/coach.js'
 import {
-  useCoachStatus, requestReview, resolvePending, forgetCoach, disclosure, JOB_ERRORS
+  useCoachStatus, requestReview, resolvePending, forgetCoach, syncCoachProfile, disclosure, JOB_ERRORS
 } from '../lib/coach-api.js'
 import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
@@ -68,10 +68,8 @@ export default function Coach() {
     message: t('Any pending suggestion is discarded and scheduled reviews stop. Your Coach history stays, and you can turn it back on anytime.'),
     confirmText: t('Turn off'), danger: true,
     onConfirm: async () => {
-      try { await forgetCoach() } catch (e) { /* server-side copy goes on the next call */ }
-      update(s => { s.coach = { ...(s.coach || emptyCoach()), consent: null, cadence: 'off' } })
-      toast(t('The Coach is off'))
-      nav('/home')
+      try { await forgetCoach(); toast(t('The Coach is off')); nav('/home') }
+      catch (e) { toast(e.message || t('Could not turn the Coach off in the cloud')) }
     }
   })
 
@@ -81,13 +79,13 @@ export default function Coach() {
     confirmText: t('Undo'),
     onConfirm: () => {
       let ok = false
-      update(s => { ok = revertLast(s) })
+      if (update(s => { ok = revertLast(s) }) === false) { toast(useStore.getState().storageError); return }
       toast(ok ? t('Plan restored') : t('Nothing to undo'))
     }
   })
 
   return <div className="narrow">
-    <div className="hdr">
+    <div className="hdr" data-tour="coach">
       <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Back')}><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1, marginLeft: 10 }}>
         <h1>{t('Coach')}</h1>
@@ -154,10 +152,10 @@ function ConsentCard({ onDone }) {
   useEffect(() => { disclosure().then(setInfo).catch(() => {}) }, [])
   const viaOpenRouter = (info?.provider || config?.coach?.provider) === 'openrouter'
 
-  const agree = () => {
-    update(s => { s.coach = { ...(s.coach || emptyCoach()), consent: { agreedAt: new Date().toISOString(), version: CONSENT_VERSION } } })
-    toast(t('The Coach is on'))
-    onDone()
+  const agree = async () => {
+    if (update(s => { s.coach = { ...(s.coach || emptyCoach()), consent: { agreedAt: new Date().toISOString(), version: CONSENT_VERSION } } }) === false) { toast(useStore.getState().storageError); return }
+    try { await syncCoachProfile(); toast(t('The Coach is on')); onDone() }
+    catch (e) { toast(e.message || t('Consent is saved locally; cloud sync needs attention in Settings.')) }
   }
 
   const open = () => openSheet(close => <>
@@ -284,14 +282,14 @@ function CadenceCard({ coach, update }) {
 
 /* ---------------------------------- log ---------------------------------- */
 
-function LogCard({ coach }) {
+export function LogCard({ coach }) {
   const openSheet = useUI(s => s.openSheet)
   const log = [...(coach.log || [])].reverse()
   if (!log.length) return null
 
   const detail = e => openSheet(close => <>
     <h3>{e.kind === 'create' ? t('Plan from the Coach') : e.kind === 'revert' ? t('Undo') : t('Coach review')}</h3>
-    <div className="dim small" style={{ marginBottom: 10 }}>{fmtDate(new Date(e.at).toISOString().slice(0, 10), true)}</div>
+    <div className="dim small" style={{ marginBottom: 10 }}>{fmtTimestamp(e.at, true)}</div>
     {e.summary && <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>{e.summary}</div>}
     {!!e.evidence?.sessions && <div className="dim small" style={{ marginBottom: 10 }}>
       {t('Based on {0} sessions', e.evidence.sessions)}{e.evidence.from ? ' · ' + fmtDate(e.evidence.from) + ' – ' + fmtDate(e.evidence.to) : ''}
@@ -317,7 +315,7 @@ function LogCard({ coach }) {
         return <div key={e.id} className="item" onClick={() => detail(e)}>
           <div className="grow">
             <div className="tt">{e.kind === 'create' ? t('Built a plan') : e.kind === 'revert' ? t('Undid the last changes') : t('Reviewed your training')}</div>
-            <div className="ss">{fmtDate(new Date(e.at).toISOString().slice(0, 10))}
+            <div className="ss">{fmtTimestamp(e.at)}
               {e.kind === 'review' ? ' · ' + t('{0} applied', applied) : ''}</div>
           </div>
           <Icon name="chevronRight" className="chev" />

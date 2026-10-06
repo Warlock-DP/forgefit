@@ -1,5 +1,7 @@
 // Korean UI strings. Keys are the English source strings (see lib/i18n.js).
+import walkthrough from './walkthrough/ko.js'
 export default {
+  ...walkthrough,
   'Confirm': '확인',
   'Cancel': '취소',
   'Delete': '삭제',

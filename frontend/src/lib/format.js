@@ -16,6 +16,12 @@ export function fmtDate(iso, long) {
   const d = new Date(iso + 'T12:00:00')
   return d.toLocaleDateString(dateLocale(), long ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' })
 }
+// Imported or previously cached Coach entries must never take down the history screen.
+export function fmtTimestamp(at, long) {
+  if (typeof at !== 'number' || !Number.isFinite(at)) return t('Date unavailable')
+  const date = new Date(at)
+  return Number.isFinite(date.getTime()) ? fmtDate(date.toISOString().slice(0, 10), long) : t('Date unavailable')
+}
 export function fmtDur(ms) {
   const m = Math.floor(ms / 60000)
   return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + ' min'
@@ -44,4 +50,4 @@ export function weekKey(d) {
 export const localTZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' } }
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-export const ACCENTS = { orange: '#ff6a00', lime: '#30d158', sky: '#0a84ff', violet: '#bf5af2', pink: '#ff375f', red: '#ff453a', teal: '#40c8e0', gold: '#ffd60a' }
+export const ACCENTS = { orange: '#ee8d62', lime: '#30d158', sky: '#0a84ff', violet: '#bf5af2', pink: '#ff375f', red: '#ff453a', teal: '#40c8e0', gold: '#ffd60a' }

@@ -51,7 +51,7 @@ export default function AISettings() {
         <div className="sub">{t('Free models. Your control.')}</div>
       </div>
     </div>
-    <div className="card">
+    <div className="card" data-tour="ai-setup">
       <h2>{t('Configure AI inside ForgeFit')}</h2>
       <p className="muted small" style={{ lineHeight: 1.5 }}>
         {t('Add your OpenRouter API key, choose a free model, test the connection, then enable the AI Coach. No Netlify environment-variable changes are needed for the provider key.')}

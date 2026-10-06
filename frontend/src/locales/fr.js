@@ -1,5 +1,7 @@
 // French UI strings. Keys are the English source strings (see lib/i18n.js).
+import walkthrough from './walkthrough/fr.js'
 export default {
+  ...walkthrough,
   'Confirm': 'Confirmer',
   'Cancel': 'Annuler',
   'Delete': 'Supprimer',

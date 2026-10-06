@@ -53,8 +53,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      # No dependencies to install: the Coach tests run on node:test and drive the in-repo
-      # fixture provider, so the whole job graph works without an AI account or a network.
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      # Netlify handler/storage tests import the actual runtime packages. All database and
+      # provider calls remain test fixtures; no live account or AI credentials are needed.
+      - run: npm ci
+        working-directory: api
       - run: npm test
         working-directory: api
       # The API's copy of the exercise catalogue is generated and committed. A dataset change

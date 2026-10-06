@@ -6,6 +6,7 @@ import { ApiError, configuration, emptyCore, fingerprint, requireUser, userShape
 import { createCoach } from './coach.js';
 import { createNotifications } from './notifications.js';
 import { consentKey, hasConsent, revokeConsent, clearConsent } from './consent.js';
+import { stateRevision, revisionError } from '../state-revision.js';
 
 const nameOf = value => String(value || '').trim().slice(0, 40);
 const codeOf = value => String(value || '').trim().toUpperCase();
@@ -141,26 +142,35 @@ export function createApi({ env = process.env, store: injectedStore, webauthn = 
         case 'POST /api/logout/all':
           await mutate(false, async (core, user) => { user.sv = (user.sv || 0) + 1; });
           return json(200, { ok: true }, { 'Set-Cookie': sessionCookie(null, cfg, true) });
-        case 'GET /api/data': return json(200, { state: await store.state(auth().id) });
+        case 'GET /api/data': {
+          const state = await store.state(auth().id);
+          return json(200, { state, revision: stateRevision(state) });
+        }
         case 'PUT /api/data': {
           const user = auth();
           if (!body.state || typeof body.state !== 'object' || Array.isArray(body.state)) throw new ApiError(400, 'state required');
+          if (body.userId && body.userId !== user.id) throw new ApiError(403, 'The signed-in profile changed. Sign in again before syncing.', 'sync_profile');
           delete body.state.active;
-          await mutate(false, async (core, user, tx) => {
+          let coachConsentCleared = false;
+          const revision = await mutate(false, async (core, user, tx) => {
             const previous = await tx.state(user.id);
+            const conflict = revisionError(body, previous);
+            if (conflict) throw new ApiError(conflict.status, conflict.error, conflict.code);
             let revokedAt = await tx.get(consentKey(user.id));
             if (hasConsent(previous, revokedAt) && !hasConsent(body.state, revokedAt)) {
               revokedAt = await revokeConsent(tx, user.id, previous);
             }
             if (!hasConsent(body.state, revokedAt)) {
               clearConsent(body.state);
+              coachConsentCleared = !!body.state.coach && typeof body.state.coach === 'object' && !Array.isArray(body.state.coach);
               await tx.remove('coach:' + user.id);
             }
             await tx.saveState(user.id, body.state);
+            return stateRevision(body.state);
           }, ['state:' + user.id, 'coach:' + user.id]);
           // Automatic count-based reviews are event-driven; no always-running server required.
           await coach.afterSync(user.id).catch(() => {});
-          return json(200, { ok: true, ts: body.state._ts || null });
+          return json(200, { ok: true, ts: body.state._ts || null, revision, ...(coachConsentCleared ? { coachConsentCleared: true } : {}) });
         }
         case 'POST /api/activity': {
           const user = auth();

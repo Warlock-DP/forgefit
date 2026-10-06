@@ -4,6 +4,7 @@ import { beep, vibrate } from '../lib/sound.js'
 import { api } from '../lib/api.js'
 import { t } from '../lib/i18n.js'
 import { useStore } from './useStore.js'
+import { markWalkthroughSeen } from '../lib/walkthrough.js'
 
 // Fire-and-forget: lets the server push a "rest over" alert if this tab gets suspended
 // before the local timer completes. No-ops for guests / offline.
@@ -22,6 +23,26 @@ export const useUI = create((set, get) => ({
   toastMsg: '',
   timer: null,         // rest countdown between sets — { left, total, endsAt }
   work: null,          // work countdown DURING a timed set (issue #16) — { left, total, endsAt, label }
+  walkthrough: null,
+  walkthroughReturn: null,
+
+  startWalkthrough({ automatic = false } = {}) {
+    const { S, user, ready, profileLoading, isGuest } = useStore.getState()
+    if (get().walkthrough) return false
+    if (!ready || profileLoading || !(user || isGuest())) return false
+    if (S.active || get().work || get().timer) {
+      if (!automatic) get().toast(t('Finish your workout before starting the walkthrough.'))
+      return false
+    }
+    if (get().sheets.length) {
+      if (!automatic) get().toast(t('Close the open dialog before starting the walkthrough.'))
+      return false
+    }
+    set({ walkthrough: { id: uid(), profile: user?.id || 'guest' }, walkthroughReturn: null })
+    markWalkthroughSeen()
+    return true
+  },
+  endWalkthrough(returnTo = null) { set({ walkthrough: null, walkthroughReturn: returnTo }) },
 
   openSheet(render, { kind = 'sheet', locked = false } = {}) {
     const id = uid()
@@ -129,3 +150,13 @@ export const useUI = create((set, get) => ({
     set({ work: null })
   }
 }))
+
+// A timer belongs to one workout, not to the page that happens to be open. This also
+// covers profile switches, backup imports and resets that end/replace a session.
+useStore.subscribe((state, previous) => {
+  const identity = active => active ? active.id || active.start : null
+  if (identity(state.S.active) !== identity(previous.S.active)) {
+    useUI.getState().stopWork()
+    useUI.getState().stopRest()
+  }
+})

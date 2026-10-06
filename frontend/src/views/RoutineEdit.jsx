@@ -47,7 +47,7 @@ export default function RoutineEdit() {
       <button className="iconbtn" aria-label={t('Pick an icon')} onClick={() => glyphPicker(r.emoji, g => update(s => { s.routines.find(x => x.id === id).emoji = g }))}><Icon name={glyphOf(r.emoji)} /></button>
     </div>
 
-    <div className="sect-b" style={{ marginBottom: 16 }}>
+    <div className="sect-b" data-tour="routine" style={{ marginBottom: 16 }}>
       <SelectRow icon="chartLine" title={t('Progression')} sheetTitle={t('Progression')}
         value={r.prog || 'linear'} onChange={v => update(s => { s.routines.find(x => x.id === id).prog = v })}
         options={POLICIES_FOR.reps.map(p => ({ value: p, label: t(POLICY_NAME[p]), subtitle: t(POLICY_DESC[p]) }))} />
@@ -99,11 +99,11 @@ export default function RoutineEdit() {
     <Button variant="danger" onClick={() => confirmSheet({
       title: t('Delete routine?'), message: t('“{0}” and its exercises will be removed.', r.name), confirmText: t('Delete'), danger: true,
       onConfirm: () => {
-        update(s => {
+        if (update(s => {
           s.routines = s.routines.filter(x => x.id !== id)
           Object.keys(s.week).forEach(k => { if (s.week[k] === id) delete s.week[k] })
           Object.keys(s.dayPlan).forEach(k => { if (s.dayPlan[k] === id) delete s.dayPlan[k] })
-        })
+        }) === false) return
         nav('/plan')
       }
     })}>{t('Delete routine')}</Button>

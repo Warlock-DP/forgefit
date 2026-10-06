@@ -22,7 +22,11 @@ import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLIC
 import { MOBILE, shareExport } from './lib/mobile.js'
 
 const S = () => useStore.getState().S
-const update = (...a) => useStore.getState().update(...a)
+const update = (...a) => {
+  const saved = useStore.getState().update(...a)
+  if (saved === false) ui().toast(useStore.getState().storageError)
+  return saved
+}
 const ui = () => useUI.getState()
 const toast = m => ui().toast(m)
 const snd = () => S().sound
@@ -45,10 +49,10 @@ export function confirmSheet(opts) {
 /* ============================ starter plan ============================ */
 export function loadStarterPlan() {
   const [push, pull, legs] = starterRoutines()
-  update(st => {
+  if (update(st => {
     st.routines.push(push, pull, legs)
     st.week[1] = push.id; st.week[3] = pull.id; st.week[5] = legs.id
-  })
+  }) === false) return
   toast(t('Starter plan loaded — Mon Push · Wed Pull · Fri Legs'))
 }
 
@@ -92,12 +96,12 @@ function BwSheet({ required, onDone, close }) {
   const save = () => {
     const n = Math.round((v || 0) * 10) / 10
     if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
-    update(s => {
+    if (update(s => {
       const iso = todayISO()
       const ex = s.bodyweight.find(b => b.d === iso)
       if (ex) { ex.w = n; ex.t = Date.now() } else s.bodyweight.push({ d: iso, w: n, t: Date.now() })
       s.bodyweight.sort((a, b) => (a.d < b.d ? -1 : 1))
-    })
+    }) === false) return
     close()
     if (onDone) onDone(n); else toast(t('Weight saved'))
   }
@@ -145,7 +149,7 @@ function ImportSummary({ parsed, close }) {
 
   const doImport = () => {
     let res
-    update(s => { res = mergeImport(s, parsed) })
+    if (update(s => { res = mergeImport(s, parsed) }) === false) return
     close()
     toast(isBW
       ? t('{0} weigh-ins imported', res.added)
@@ -243,10 +247,10 @@ function GoalSheet({ close }) {
     <Button variant="primary" onClick={() => {
       const n = Math.round((v || 0) * 10) / 10
       if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
-      update(s => { s.targetW = n }); close()
+      if (update(s => { s.targetW = n }) === false) return; close()
       const b = lastBW(S()); toast(t('Goal set: {0}', fmtNum(n) + ' ' + st.unit) + (b ? ' (' + t('{0} to go', fmtNum(Math.abs(n - b.w))) + ')' : ''))
     }}>{t('Save goal')}</Button>
-    {st.targetW && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { update(s => { s.targetW = null }); close(); toast(t('Goal removed')) }}>{t('Remove goal')}</Button></>}
+    {st.targetW && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { if (update(s => { s.targetW = null }) === false) return; close(); toast(t('Goal removed')) }}>{t('Remove goal')}</Button></>}
   </>
 }
 export const goalSheet = () => ui().openSheet(close => <GoalSheet close={close} />)
@@ -313,11 +317,11 @@ function AddToRoutine({ ex, close }) {
     close()
     const isNew = rid === '_new'
     exConfigSheet(ex, null, cfg => {
-      update(s => {
+      if (update(s => {
         let r = isNew ? { id: uid(), name: t('New routine'), emoji: DEFAULT_GLYPH, ex: [] } : s.routines.find(x => x.id === rid)
         if (isNew) s.routines.push(r)
         if (r) r.ex.push({ id: ex.id, ...cfg })
-      })
+      }) === false) return
       const r = isNew ? S().routines[S().routines.length - 1] : st.routines.find(x => x.id === rid)
       toast(t('“{0}” added to {1}', ex.n, r ? r.name : t('routine')))
       if (isNew && r) nav('/plan/r/' + r.id)
@@ -354,10 +358,12 @@ function CustomExForm({ existing, prefill, onDone, close }) {
     if (dup) { toast(t('“{0}” already exists', dup.n)); return }
     const d = desc.trim().slice(0, 1000)
     let id = existing && existing.id
-    if (existing) update(s => { const c = (s.customEx || []).find(x => x.id === id); if (c) { c.n = name; c.bp = bp; c.desc = d } })
+    if (existing) {
+      if (update(s => { const c = (s.customEx || []).find(x => x.id === id); if (c) { c.n = name; c.bp = bp; c.desc = d } }) === false) return
+    }
     else {
       id = 'c' + uid()
-      update(s => { (s.customEx = s.customEx || []).push({ id, n: name, bp, desc: d, tg: '', eq: 'custom', custom: true }) })
+      if (update(s => { (s.customEx = s.customEx || []).push({ id, n: name, bp, desc: d, tg: '', eq: 'custom', custom: true }) }) === false) return
     }
     close()
     toast(existing ? t('Saved') : t('“{0}” created', name))
@@ -387,13 +393,13 @@ export function deleteCustomEx(ex, afterDelete) {
     message: t('It will be removed from your routines. Already-logged workouts keep their sets.'),
     confirmText: t('Delete'), danger: true,
     onConfirm: () => {
-      update(s => {
+      if (update(s => {
         s.customEx = (s.customEx || []).filter(x => x.id !== ex.id)
         s.routines.forEach(r => { r.ex = r.ex.filter(e => e.id !== ex.id); cleanupSg(r.ex) })
         // stamp the name into history entries so past workouts stay readable
         s.workouts.forEach(w => w.entries.forEach(e => { if (e.id === ex.id) e.n = ex.n }))
         delete s.exWeights[ex.id]
-      })
+      }) === false) return
       toast(t('Exercise deleted'))
       afterDelete && afterDelete()
     }
@@ -620,7 +626,7 @@ export const planImportSheet = bundle => ui().openSheet(close => <PlanImport bun
 function PlanImport({ bundle, close }) {
   const [schedule, setSchedule] = useState(false)
   const apply = () => {
-    update(s => mergePlan(s, bundle, { schedule }))
+    if (update(s => mergePlan(s, bundle, { schedule })) === false) return
     close()
     toast(t('Added {0} routines to your plan', bundle.routineCount))
     nav('/plan')
@@ -658,7 +664,7 @@ function DayOverride({ iso, close }) {
   const hasOvr = st.dayPlan[iso] !== undefined
   const effId = effectiveRoutineId(st, iso)
   const set = v => {
-    update(s => { if (!v) delete s.dayPlan[iso]; else s.dayPlan[iso] = v })
+    if (update(s => { if (!v) delete s.dayPlan[iso]; else s.dayPlan[iso] = v }) === false) return
     close()
     toast(v === '' ? t('Back to weekly plan') : v === 'rest' ? t('{0} set to rest', fmtDate(iso)) : t('{0} planned for {1}', (st.routines.find(r => r.id === v) || {}).name, fmtDate(iso)))
   }
@@ -679,7 +685,7 @@ export const dayOverrideSheet = iso => ui().openSheet(close => <DayOverride iso=
 
 function DayAssign({ day, close }) {
   const st = useStore(s => s.S)
-  const set = v => { update(s => { if (v) s.week[day] = v; else delete s.week[day] }); close() }
+  const set = v => { if (update(s => { if (v) s.week[day] = v; else delete s.week[day] }) === false) return; close() }
   return <>
     <h3>{t(DAYN[day])}</h3>
     <div className="list">
@@ -707,7 +713,7 @@ function WorkoutDetail({ w, close }) {
           <div className="ss">{e.sets.filter(s => s.done).map(s => setLabel(e.id, s, e.target)).join('  ·  ') || t('no sets')}</div></div>
       </div>
     })}
-    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => { update(s => { s.workouts = s.workouts.filter(x => x.id !== w.id) }); close(); toast(t('Workout deleted')) } })}>{t('Delete workout')}</Button>
+    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => { if (update(s => { s.workouts = s.workouts.filter(x => x.id !== w.id) }) === false) return; close(); toast(t('Workout deleted')) } })}>{t('Delete workout')}</Button>
   </>
 }
 export const workoutDetailSheet = w => ui().openSheet(close => <WorkoutDetail w={w} close={close} />)
@@ -781,9 +787,10 @@ export function beginWorkout(routineId, bw) {
     const plan = nextPrescription(st, cfg, r)
     return { id: cfg.id, sg: cfg.sg, target: { ...cfg }, plan, sets: applyPrescription(buildSets(st, cfg), plan) }
   })
-  update(s => {
+  if (update(s => {
     s.active = { id: uid(), d: todayISO(), start: Date.now(), routineId, name: r ? r.name : t('Freestyle'), bw: bw || null, cur: 0, entries }
-  })
+  }) === false) return
+  useUI.getState().stopWork()
   useUI.getState().stopRest()
   nav('/workout')
 }
@@ -812,11 +819,11 @@ function TopWeight({ entryIdx, close }) {
   const commit = advance => {
     const n = Math.round((v || 0) * 10) / 10
     if (!isFinite(n) || n < 0) { toast(t('Enter a valid weight')); return }
-    update(s => {
+    if (update(s => {
       s.active.entries[entryIdx].topW = n
       const cur = s.exWeights[entry.id]
       s.exWeights[entry.id] = { w: Math.max(n, cur ? cur.w : 0), d: todayISO() }
-    })
+    }) === false) return
     close()
     if (advance && unitDone) {
       if (isLastUnit) workoutCompleteSheet()               // whole workout done → finish/continue prompt
@@ -860,8 +867,8 @@ function SessionRating({ w }) {
   const onWorkout = (s, fn) => { const rec = (s.workouts || []).find(x => x.id === w.id); if (rec) fn(rec) }
   const pick = v => {
     const next = v === rating ? null : v
+    if (update(s => onWorkout(s, rec => { if (next) rec.rating = next; else delete rec.rating })) === false) return
     setRating(next)
-    update(s => onWorkout(s, rec => { if (next) rec.rating = next; else delete rec.rating }))
   }
   const saveNote = () => update(s => onWorkout(s, rec => {
     const v = note.trim()
@@ -935,14 +942,15 @@ function doFinishWorkout() {
     prs
   }
   w.vol = workoutVolume(w)
-  update(s => {
+  if (update(s => {
     w.entries.forEach(e => {
       const mx = Math.max(0, ...e.sets.filter(x => x.done).map(x => x.w || 0), e.topW || 0)
       if (mx > 0) { const cur = s.exWeights[e.id]; if (!cur || mx > cur.w) s.exWeights[e.id] = { w: mx, d: w.d } }
     })
     s.workouts.push(w)
     s.active = null
-  })
+  }) === false) return
+  useUI.getState().stopWork()
   useUI.getState().stopRest()
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
   ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })

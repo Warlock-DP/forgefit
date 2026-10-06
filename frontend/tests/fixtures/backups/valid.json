@@ -1,0 +1,16 @@
+{
+  "workouts": [{
+    "id": "qa-backup-session",
+    "d": "2026-10-05",
+    "name": "Backup verification session",
+    "start": 1791201600000,
+    "end": 1791202500000,
+    "entries": [{"id": "0025", "sets": [{"w": 20, "r": 10, "done": true}]}],
+    "prs": [],
+    "vol": 200
+  }],
+  "routines": [],
+  "bodyweight": [],
+  "week": {},
+  "dayPlan": {}
+}
