@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.forgefit.app",
+      "sha256_cert_fingerprints": [
+        "04:AE:14:EF:54:B9:E6:90:7E:59:54:33:DA:41:E9:CD:D9:50:59:88:75:2E:CE:EA:76:E7:F2:1C:0E:EB:39:25"
+      ]
+    }
+  }
+]

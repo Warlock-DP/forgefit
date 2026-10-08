@@ -15,6 +15,12 @@
 
 # React Router runs in the browser. Static assets are served first; every other
 # non-API path falls back to the app shell.
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "public, max-age=300"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

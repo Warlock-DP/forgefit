@@ -12,6 +12,15 @@ with the AGPL, provided the corresponding source code remains available under th
 the project repository. This permission applies to the distribution channel only and does
 not otherwise limit the license.
 
+## Android cloud launcher
+
+The `android-cloud/` APK includes Google's
+[Android Browser Helper 2.7.4](https://github.com/GoogleChrome/android-browser-helper)
+and its AndroidX dependencies, licensed under Apache License 2.0. The Gradle wrapper
+scripts and binary use the same license. Their copyright/license notices are retained.
+The launcher does not bundle an AI provider, database credentials or the hosted app's
+web assets. ForgeFit's launcher source remains under this repository's AGPL license.
+
 ## Bundled AI provider CLI
 
 The api image installs the [**Claude Code CLI**](https://github.com/anthropics/claude-code)

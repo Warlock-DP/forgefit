@@ -1,0 +1,47 @@
+name: Android APK
+
+on:
+  pull_request:
+    paths:
+      - 'android-cloud/**'
+      - 'frontend/public/.well-known/assetlinks.json'
+      - 'scripts/android-config.test.mjs'
+      - 'scripts/build-android-release.ps1'
+      - 'netlify.toml'
+      - '.github/workflows/android.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android-cloud/**'
+      - 'frontend/public/.well-known/assetlinks.json'
+      - 'scripts/android-config.test.mjs'
+      - 'scripts/build-android-release.ps1'
+      - 'netlify.toml'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Check cloud app identity, verification and signing boundaries
+        run: node --test scripts/android-config.test.mjs
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build and lint the cloud-connected Android package
+        working-directory: android-cloud
+        run: bash ./gradlew --no-daemon assembleRelease lintRelease
+      # CI proves the package builds, but has no access to the owner's signing key.
+      # Only a verified, independently signed APK belongs in GitHub Releases.
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: forgefit-android-unsigned
+          path: android-cloud/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7

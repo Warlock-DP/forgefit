@@ -1,5 +1,9 @@
 # Building the mobile app (iOS / Android)
 
+For the **cloud-connected ForgeFit APK** with website sign-in, Neon sync and AI, use
+[ANDROID_CLOUD.md](ANDROID_CLOUD.md) and the `android-cloud/` project. The Capacitor
+flavor described below is a separate, offline-only build; it does not include cloud AI.
+
 openGym ships in two flavors from the same codebase:
 
 | | **Self-hosted** (this repo's default) | **Mobile app** (`VITE_MOBILE=1`) |
@@ -61,8 +65,10 @@ for an independently signed Android or iOS build.
 
 ### Android — sideload the APK
 
-A signed ForgeFit APK has not been published yet. Android users can install the hosted PWA from
-Chrome, or build and sign the native package below.
+The cloud-connected APK is distributed separately through
+[ForgeFit Releases](https://github.com/Warlock-DP/forgefit/releases); see
+[ANDROID_CLOUD.md](ANDROID_CLOUD.md) for its status, installation and signing instructions.
+Android users can also install the hosted PWA from Chrome, or build the offline package below.
 
 To build and sign your own:
 

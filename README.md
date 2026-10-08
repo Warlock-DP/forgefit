@@ -97,7 +97,7 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 🌍 **12 languages** — full UI translation (EN, DE, ES, FR, IT, PT, PL, TR, RU, ZH, KO, HI); exercise instructions localized in 10 of them, loaded on demand so the app stays fast
 - 📥 **Bring your history with you** — import from **FitNotes** (Android and iOS), **Strong** and **Hevy**, or body weight straight out of an **Apple Health** export. Exercise names are matched against the library and anything unrecognised becomes one of your own exercises, so nothing in the file is dropped
 - 📦 **Yours to keep** — one-tap JSON export/import, guest mode, **no telemetry**
-- 📱 **Android-ready** — install the cloud PWA from Chrome today; a ForgeFit APK can be built from the included Capacitor project after the hosted release is verified
+- 📱 **Android app** — a lightweight, cloud-connected APK is available through [GitHub Releases](https://github.com/Warlock-DP/forgefit/releases). It uses the hosted app for sign-in, cloud sync and optional AI; see [build and beta limitations](docs/ANDROID_CLOUD.md).
 
 ## Quick start (self-host)
 
@@ -119,15 +119,23 @@ a build step locally either way.
 > Want it reachable from your phone over the internet with passkeys? You'll need an HTTPS
 > domain — a two-line change in `.env`. See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
 
-## Mobile app (no server at all)
+## Mobile app
+
+For **ForgeFit with cloud sync and AI**, download the cloud-connected Android APK from
+[GitHub Releases](https://github.com/Warlock-DP/forgefit/releases), or install the hosted PWA
+from Chrome. The APK is a small launcher for the hosted app, not a standalone offline
+database or AI model. See [docs/ANDROID_CLOUD.md](docs/ANDROID_CLOUD.md) for signing,
+full-screen verification and current beta limitations.
+
+### Offline mobile flavor (no server at all)
 
 The same codebase also builds a **standalone mobile app** (Capacitor): no account, no sync,
 no backend — everything stays on the phone, with native workout-day reminders and share-sheet
 backups. Self-hosting gets you multi-device sync and profiles for friends & family; the
 mobile app is the install-and-done flavor.
 
-- **Android:** install the hosted PWA from Chrome, or build the included Capacitor project
-  yourself: **[docs/MOBILE.md](docs/MOBILE.md)**. A signed ForgeFit APK has not been published yet.
+- **Android:** build the included offline Capacitor project yourself:
+  **[docs/MOBILE.md](docs/MOBILE.md)**. Do not use this flavor if you need cloud sync or AI.
 - **iPhone:** Apple doesn't allow installing apps outside the App Store, so there is no iOS
   download. Self-host and add it to your home screen from Safari (it's a full PWA), or build
   the native app onto your own device from Xcode — see **[docs/MOBILE.md](docs/MOBILE.md)**.
@@ -184,7 +192,7 @@ walkthroughs for [Claude](Claude-setup-instructions.md) and [ChatGPT/Codex](Chat
 
 Rough, community-driven — ideas and PRs welcome:
 
-- [ ] Publish a signed ForgeFit Android APK; the Capacitor project and installable cloud PWA are ready
+- [x] Cloud-connected, release-signed ForgeFit Android beta APK ([Releases](https://github.com/Warlock-DP/forgefit/releases)); actual-device testing and hosted full-screen verification remain release gates
 - [x] Automatic progression programs (linear, Greyskull LP, double progression) with stalls and deloads
 - [x] Estimated 1RM per exercise
 - [ ] Percentage / training-max programming (5/3/1-style) on top of the progression engine
