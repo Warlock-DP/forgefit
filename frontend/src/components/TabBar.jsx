@@ -5,6 +5,25 @@ import { todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import Icon from './Icon.jsx'
 
+export function WorkoutTabBar({ current, active, onNavigate, onStart }) {
+  const on = k => current === k || (current === 'history' && k === 'stats') || (current === 'settings' && k === 'home')
+  const Tab = ({ k, icon, to, label }) => (
+    <button className={on(k) ? 'on' : ''} onClick={() => onNavigate(to)} aria-current={on(k) ? 'page' : undefined}>
+      <Icon name={icon} /><span>{label}</span><i className="tab-indicator" aria-hidden="true" />
+    </button>
+  )
+  return <nav id="tabbar" aria-label={t('Main navigation')}>
+    <Tab k="home" icon="house" to="/home" label={t('Home')} />
+    <Tab k="plan" icon="calendar" to="/plan" label={t('Plan')} />
+    <button className={(on('workout') ? 'on ' : '') + (active ? 'rec' : '')} onClick={onStart}
+      aria-current={on('workout') ? 'page' : undefined}>
+      <Icon name="play" /><span>{t(active ? 'Resume' : 'Start')}</span><i className="tab-indicator" aria-hidden="true" />
+    </button>
+    <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
+    <Tab k="library" icon="dumbbell" to="/library" label={t('Exercises')} />
+  </nav>
+}
+
 export default function TabBar({ onStart }) {
   const nav = useNavigate()
   const loc = useLocation()
@@ -13,7 +32,6 @@ export default function TabBar({ onStart }) {
   const isGuest = useStore(s => s.isGuest())
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
-  const on = k => cur === k || (cur === 'history' && k === 'stats') || (cur === 'settings' && k === 'home')
 
   const startWorkout = () => {
     if (!S.active) {
@@ -22,22 +40,5 @@ export default function TabBar({ onStart }) {
     }
     nav('/workout')
   }
-  const Tab = ({ k, icon, to, label }) => (
-    <button className={on(k) ? 'on' : ''} onClick={() => nav(to)}>
-      <Icon name={icon} /><span>{label}</span>
-    </button>
-  )
-
-  return (
-    <nav id="tabbar">
-      <Tab k="home" icon="house" to="/home" label={t('Home')} />
-      <Tab k="plan" icon="calendar" to="/plan" label={t('Plan')} />
-      <button className={'start' + (S.active ? ' rec' : '')} onClick={startWorkout}>
-        <span className="cir"><Icon name={S.active ? 'play' : 'dumbbell'} /></span>
-        <span>{S.active ? t('Resume') : t('Start')}</span>
-      </button>
-      <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
-      <Tab k="library" icon="list" to="/library" label={t('Exercises')} />
-    </nav>
-  )
+  return <WorkoutTabBar current={cur} active={S.active} onNavigate={nav} onStart={startWorkout} />
 }

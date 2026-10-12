@@ -14,6 +14,7 @@ import { coachRoutes } from './coach/routes.js';
 import { startCadence } from './coach/cadence.js';
 import { createStorage } from './storage.js';
 import { createRuntimeState } from './runtime-state.js';
+import { stateRevision, revisionError } from './state-revision.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -69,6 +70,12 @@ const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(us
 const saveDb = () => storage.saveDatabase(db);
 const readState = uid => storage.readState(uid);
 const saveState = (uid, state) => storage.saveState(uid, state);
+const stateWrites = new Map();
+function withStateWrite(uid, work) {
+  const next = (stateWrites.get(uid) || Promise.resolve()).catch(() => {}).then(work);
+  stateWrites.set(uid, next);
+  return next.finally(() => { if (stateWrites.get(uid) === next) stateWrites.delete(uid); });
+}
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -415,17 +422,24 @@ const routes = {
   'GET /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    json(res, 200, { state: readState(user.id) });
+    const state = readState(user.id);
+    json(res, 200, { state, revision: stateRevision(state) });
   },
 
   'PUT /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
-    if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
+    if (!body.state || typeof body.state !== 'object' || Array.isArray(body.state)) return json(res, 400, { error: 'state required' });
+    if (body.userId && body.userId !== user.id) return json(res, 403, { error: 'The signed-in profile changed. Sign in again before syncing.', code: 'sync_profile' });
     delete body.state.active;              // in-progress workouts stay device-local
-    await saveState(user.id, body.state);
-    json(res, 200, { ok: true, ts: body.state._ts || null });
+    await withStateWrite(user.id, async () => {
+      const conflict = revisionError(body, readState(user.id));
+      if (conflict) return json(res, conflict.status, { error: conflict.error, code: conflict.code });
+      await saveState(user.id, body.state);
+      if (!body.state.coach?.consent?.agreedAt) coachJobs.clearUser(user.id);
+      json(res, 200, { ok: true, ts: body.state._ts || null, revision: stateRevision(body.state) });
+    });
   },
 
   'GET /api/push/public-key': async (req, res) => json(res, 200, { key: vapid.publicKey }),

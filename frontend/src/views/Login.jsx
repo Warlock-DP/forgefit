@@ -23,8 +23,8 @@ function RegisterSheet({ close }) {
     if (inviteOnly && !code.trim()) { useUI.getState().toast(t('An invite code is required')); return }
     try {
       const u = await passkeyRegister(n, code.trim())
-      setUser(u); close()
-      if (hasData(useStore.getState().S)) { await pushState(); useUI.getState().toast(t('Profile created — data from this device moved into it')) }
+      setUser(u, { adoptLocal: true }); close()
+      if (hasData(useStore.getState().S)) { const saved = await pushState(); useUI.getState().toast(t(saved ? 'Profile created — data from this device moved into it' : 'Profile created. Your data is saved locally; cloud sync needs attention in Settings.')) }
       else { await pullState(); useUI.getState().toast(t('Welcome, {0}', u.name)) }
     } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') useUI.getState().toast(e.message || t('Registration failed')) }
   }

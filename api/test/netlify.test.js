@@ -8,6 +8,8 @@ import { configuration, emptyCore, sessionCookie, taskToken, readTask, sign, fin
 import { buildPrompt, hashPlan } from '../coach/protocol.js';
 import { canonicalPlan } from '../coach/payload.js';
 import { consentKey } from '../netlify/consent.js';
+import { stateRevision } from '../state-revision.js';
+import { browserClient, browserStorage } from './browser-client.mjs';
 
 // Test-only transactional shared database: clones values and rolls back rejected writes.
 // Two createApi factories never share an account/challenge/job cache.
@@ -52,6 +54,10 @@ function req(path, method = 'GET', body, user, overrides = {}) {
     ...(method === 'GET' ? {} : { body: JSON.stringify(body || {}) }) });
 }
 function app(store, extra = {}) { return createApi({ store, env, webauthn, fetchImpl: dispatch, ...extra }); }
+async function saveProfile(store, user, state) {
+  const baseRevision = stateRevision(await store.state(user.id));
+  return app(store)(req('/api/data', 'PUT', { state, baseRevision, userId: user.id }, user));
+}
 async function seed(store) {
   const admin = { id: 'owner-profile-123456789', name: 'Owner', admin: true }, member = { id: 'other-profile-123456789', name: 'Member' };
   await store.set('core', { ...emptyCore(), users: [admin, member], creds: [{ id: 'login-key', userId: member.id, publicKey: 'dGVzdA', counter: 0 }] });
@@ -136,10 +142,65 @@ test('disabling and re-enabling an account does not resurrect its old session', 
 test('cloud state saves are per-user and in-progress workouts stay local', async () => {
   const store = memoryStore(); const { admin, member } = await seed(store);
   const state = { workouts: [{ d: '2026-10-01', name: 'Session' }], active: { name: 'In progress' }, _ts: 123 };
-  assert.equal((await app(store)(req('/api/data', 'PUT', { state }, member))).status, 200);
+  assert.equal((await saveProfile(store, member, state)).status, 200);
   const saved = await (await app(store)(req('/api/data', 'GET', null, member))).json();
   assert.equal(saved.state.active, undefined); assert.equal(saved.state.workouts.length, 1);
+  assert.equal(saved.revision, stateRevision(saved.state));
   assert.equal((await (await app(store)(req('/api/data', 'GET', null, admin))).json()).state, null);
+});
+
+test('outdated clients fail closed instead of overwriting cloud data', async () => {
+  const store = memoryStore(); const { member } = await seed(store), original = await store.state(member.id);
+  const response = await app(store)(req('/api/data', 'PUT', { state: { workouts: [] } }, member));
+  assert.equal(response.status, 428);
+  assert.equal((await response.json()).code, 'sync_version');
+  assert.deepEqual(await store.state(member.id), original);
+});
+
+test('stale device saves cannot erase newer history, regardless of device clock', async () => {
+  for (const _ts of [1000, 9999999999999]) {
+    const store = memoryStore(); const { member } = await seed(store);
+    const baseRevision = stateRevision(await store.state(member.id));
+    const latest = { workouts: [{ id: 'base' }, { id: 'phone-session' }], _ts: 2000 };
+    const saved = await saveProfile(store, member, latest);
+    assert.equal(saved.status, 200);
+    const response = await app(store)(req('/api/data', 'PUT', { state: { workouts: [{ id: 'base' }], _ts }, baseRevision }, member));
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, 'sync_conflict');
+    assert.deepEqual((await store.state(member.id)).workouts, latest.workouts);
+  }
+});
+
+test('only one concurrent save from the same base wins across fresh handlers', async () => {
+  const store = memoryStore(); const { member } = await seed(store);
+  const baseRevision = stateRevision(await store.state(member.id));
+  const responses = await Promise.all(['phone', 'laptop'].map(id => app(store)(req('/api/data', 'PUT', {
+    state: { workouts: [{ id }] }, baseRevision
+  }, member))));
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  const winner = responses.findIndex(response => response.status === 200);
+  assert.equal((await store.state(member.id)).workouts[0].id, ['phone', 'laptop'][winner]);
+});
+
+test('a new profile requires a null base and returns a revision for the next save', async () => {
+  const store = memoryStore(); const { admin } = await seed(store);
+  const initial = await (await app(store)(req('/api/data', 'GET', null, admin))).json();
+  assert.deepEqual(initial, { state: null, revision: null });
+  const saved = await saveProfile(store, admin, { workouts: [{ id: 'one' }] });
+  assert.equal(saved.status, 200);
+  const revision = (await saved.json()).revision;
+  assert.equal(revision, stateRevision(await store.state(admin.id)));
+  assert.equal((await app(store)(req('/api/data', 'PUT', { state: { workouts: [] }, baseRevision: null }, admin))).status, 409);
+  assert.equal((await app(store)(req('/api/data', 'PUT', { state: { workouts: [{ id: 'two' }] }, baseRevision: revision }, admin))).status, 200);
+});
+
+test('a changed login cannot sync another profile’s pending snapshot', async () => {
+  const store = memoryStore(); const { member, admin } = await seed(store), original = await store.state(member.id);
+  assert.equal((await app(store)(req('/api/data', 'PUT', {
+    state: { workouts: [] }, baseRevision: null, userId: member.id
+  }, admin))).status, 403);
+  assert.equal(await store.state(admin.id), null);
+  assert.deepEqual(await store.state(member.id), original);
 });
 test('parallel metadata edits do not lose unrelated changes', async () => {
   const store = memoryStore(); const { admin } = await seed(store);
@@ -246,21 +307,125 @@ test('a stale device cannot restore withdrawn consent; a new explicit acceptance
   const store = memoryStore(); const { admin, member } = await seed(store); const coach = await connect(store, admin, testAdapter);
   const stale = await store.state(member.id);
   await coach.route('POST /api/coach/forget', {}, req('/api/coach/forget', 'POST', {}, member));
-  assert.equal((await app(store)(req('/api/data', 'PUT', { state: stale }, member))).status, 200);
+  assert.equal((await saveProfile(store, member, stale)).status, 200);
   assert.equal((await store.state(member.id)).coach.consent, null);
   await assert.rejects(() => coach.enqueue(member.id, { kind: 'review' }), e => e.code === 'consent');
   const fresh = await store.state(member.id);
   fresh.coach.consent = { agreedAt: new Date((await store.get(consentKey(member.id))) + 1).toISOString(), version: 1 };
-  assert.equal((await app(store)(req('/api/data', 'PUT', { state: fresh }, member))).status, 200);
+  assert.equal((await saveProfile(store, member, fresh)).status, 200);
   assert.deepEqual((await store.state(member.id)).coach.consent, fresh.coach.consent);
   assert.ok((await coach.enqueue(member.id, { kind: 'review' })).id);
 });
 test('syncing a consent withdrawal also blocks older accepted snapshots', async () => {
   const store = memoryStore(); const { member } = await seed(store), stale = await store.state(member.id);
   const withdrawn = structuredClone(stale); withdrawn.coach.consent = null;
-  assert.equal((await app(store)(req('/api/data', 'PUT', { state: withdrawn }, member))).status, 200);
-  assert.equal((await app(store)(req('/api/data', 'PUT', { state: stale }, member))).status, 200);
+  assert.equal((await saveProfile(store, member, withdrawn)).status, 200);
+  assert.equal((await saveProfile(store, member, stale)).status, 200);
   assert.equal((await store.state(member.id)).coach.consent, null);
+});
+
+test('forgetting the Coach changes the revision and stale saves have no consent side effects', async () => {
+  const store = memoryStore(); const { admin, member } = await seed(store), stale = await store.state(member.id);
+  const baseRevision = stateRevision(stale), coach = await connect(store, admin, testAdapter);
+  await coach.route('POST /api/coach/forget', {}, req('/api/coach/forget', 'POST', {}, member));
+  const revoked = await store.state(member.id), tombstone = await store.get(consentKey(member.id));
+  assert.notEqual(stateRevision(revoked), baseRevision);
+  assert.equal((await app(store)(req('/api/data', 'PUT', { state: stale, baseRevision }, member))).status, 409);
+  assert.deepEqual(await store.state(member.id), revoked);
+  assert.equal(await store.get(consentKey(member.id)), tombstone);
+});
+
+async function clientFixture() {
+  const store = memoryStore(), { admin, member } = await seed(store);
+  const state = await store.state(member.id);
+  state.workouts.push({ id: 'baseline-session', d: '2026-10-01', entries: [] });
+  await store.saveState(member.id, state);
+  const storage = browserStorage();
+  storage.setItem('gym_user', JSON.stringify(member)); storage.setItem('gym_state_owner', member.id);
+  storage.setItem('gym_state_v1', JSON.stringify(state));
+  storage.setItem('gym_sync_v1', JSON.stringify({ owner: member.id, known: true, revision: stateRevision(state) }));
+  const calls = [], api = async (path, options) => {
+    calls.push({ path, options });
+    const response = await app(store)(req(path, options?.method || 'GET', options?.body ? JSON.parse(options.body) : null, member));
+    const value = await response.json();
+    if (!response.ok) throw Object.assign(new Error(value.error), { status: response.status, code: value.code });
+    return value;
+  };
+  const client = () => browserClient({ storage, api });
+  return { store, admin, member, storage, calls, client };
+}
+test('browser tabs cannot erase an unsynced workout through a shared dirty flag', async () => {
+  const f = await clientFixture(), a = f.client(), b = f.client();
+  a.store.getState().update(s => s.workouts.push({ id: 'unsynced-session', d: '2026-10-05', entries: [] }));
+  assert.equal(await b.store.getState().pushState(), true);
+  assert.equal(await a.store.getState().pushState(), true);
+  const reload = f.client(); assert.equal(await reload.store.getState().pullState(), true);
+  assert.equal((await f.store.state(f.member.id)).workouts.length, 2);
+  assert.equal(reload.store.getState().S.workouts.length, 2);
+});
+test('browser Coach shutdown preserves workouts and the next save uses the new revision', async () => {
+  const f = await clientFixture(), coach = await connect(f.store, f.admin, testAdapter);
+  const job = await coach.enqueue(f.member.id, { kind: 'review' }), client = f.client();
+  await client.coach.forgetCoach();
+  assert.equal(client.store.getState().syncStatus, 'synced');
+  assert.equal((await f.store.state(f.member.id)).coach.consent, null);
+  assert.equal((await f.store.state(f.member.id)).workouts.length, 1);
+  assert.equal(await f.store.get('coach:' + f.member.id), null);
+  let aiCalls = 0;
+  await createCoach({ store: f.store, cfg, adapter: { async invoke() { aiCalls++; } } }).execute(f.member.id, job.id);
+  assert.equal(aiCalls, 0);
+  client.store.getState().update(s => { s.unit = 'lb'; });
+  assert.equal(await client.store.getState().pushState(), true);
+  assert.equal((await f.store.state(f.member.id)).unit, 'lb');
+  assert.equal(f.calls.some(c => c.path === '/api/coach/forget'), false);
+});
+test('restoring an old browser backup reflects cloud-revoked Coach consent before any AI request', async () => {
+  const f = await clientFixture(); let providerCalls = 0;
+  await connect(f.store, f.admin, { async invoke() { providerCalls++; return { code: 0, text: '{"coach_contract":1,"ok":true}' }; } });
+  const beforeCalls = providerCalls, client = f.client(), backup = JSON.parse(JSON.stringify(client.store.getState().S));
+  await client.coach.forgetCoach();
+  client.store.getState().importBackup(backup);
+  assert.ok(client.store.getState().S.coach.consent);
+  assert.equal(await client.store.getState().pushState(), true);
+  assert.equal(client.store.getState().S.coach.consent, null);
+  assert.equal(client.store.getState().S.coach.cadence, 'off');
+  assert.equal(client.store.getState().syncStatus, 'synced');
+  assert.equal((await f.store.state(f.member.id)).coach.consent, null);
+  assert.equal(client.store.getState().S.workouts.length, 1);
+  await assert.rejects(() => client.coach.requestReview('synthetic data'), e => e.code === 'consent');
+  assert.equal(f.calls.some(c => c.path === '/api/coach/review'), false);
+  assert.equal(providerCalls, beforeCalls);
+  const reload = f.client();
+  assert.equal(reload.store.getState().S.coach.consent, null);
+  assert.equal(reload.store.getState().syncStatus === 'conflict', false);
+  const fresh = { version: 1, agreedAt: new Date((await f.store.get(consentKey(f.member.id))) + 1).toISOString() };
+  reload.store.getState().update(s => { s.coach.consent = fresh; });
+  assert.ok((await reload.coach.requestReview('fresh consent')).job.id);
+  assert.deepEqual((await f.store.state(f.member.id)).coach.consent, fresh);
+});
+test('browser reset atomically clears cloud training and queued Coach work without a false conflict', async () => {
+  const f = await clientFixture(), coach = await connect(f.store, f.admin, testAdapter);
+  await coach.enqueue(f.member.id, { kind: 'review' });
+  const client = f.client(); await client.store.getState().resetAll();
+  assert.equal(client.store.getState().syncStatus, 'synced');
+  assert.deepEqual((await f.store.state(f.member.id)).workouts, []);
+  assert.equal((await f.store.state(f.member.id)).coach, null);
+  assert.equal(await f.store.get('coach:' + f.member.id), null);
+  assert.equal(client.store.getState().recoveryCopies[0].state.workouts.length, 1);
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0].options.method, 'PUT');
+});
+test('immediate browser review flushes new consent before the server checks it', async () => {
+  const f = await clientFixture(); await connect(f.store, f.admin, testAdapter);
+  const state = await f.store.state(f.member.id); state.coach.consent = null; await f.store.saveState(f.member.id, state);
+  f.storage.setItem('gym_state_v1', JSON.stringify(state));
+  f.storage.setItem('gym_sync_v1', JSON.stringify({ owner: f.member.id, known: true, revision: stateRevision(state) }));
+  const client = f.client();
+  client.store.getState().update(s => { s.coach.consent = { version: 1, agreedAt: new Date().toISOString() }; });
+  assert.equal((await f.store.state(f.member.id)).coach.consent, null);
+  const response = await client.coach.requestReview('synthetic note');
+  assert.ok(response.job.id);
+  assert.deepEqual(f.calls.map(c => [c.path, c.options?.method]), [['/api/data', 'PUT'], ['/api/coach/review', 'POST']]);
+  assert.ok((await f.store.state(f.member.id)).coach.consent.agreedAt);
 });
 test('late worker completions cannot restore a forgotten proposal', async () => {
   const store = memoryStore(); const { admin, member } = await seed(store);

@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api.js'
 import { DEMO } from './demo.js'
+import { CONSENT_VERSION } from './coach.js'
 import { useStore } from '../store/useStore.js'
 
 const POLL_MS = 3000        // a job is running: often enough to feel live
@@ -21,12 +22,36 @@ let demoMod = null
 const demo = async () => (demoMod = demoMod || await import('./coach-demo.js'))
 const S = () => useStore.getState().S
 
+// Consent and intake edits must reach the authoritative profile before a job reads it.
+// A debounce is fine for ordinary settings, but never a prerequisite for an AI request.
+export async function syncCoachProfile() {
+  if (DEMO) return
+  const store = useStore.getState(), uid = store.user?.id
+  if (!uid) throw new Error('Sign in before using the Coach.')
+  if (store.storageError) throw new Error(store.storageError)
+  if (!await store.pushState()) throw new Error(useStore.getState().syncError || 'Save your profile before asking the Coach. Check cloud sync in Settings.')
+  if (useStore.getState().user?.id !== uid) throw new Error('The profile changed. Open the Coach again for the current profile.')
+}
+const ask = async (path, body) => {
+  await syncCoachProfile()
+  const consent = S().coach?.consent
+  if (!consent?.agreedAt || consent.version !== CONSENT_VERSION) throw Object.assign(new Error('The Coach needs your go-ahead first. Open Coach and accept the disclosure again.'), { code: 'consent' })
+  return api(path, { method: 'POST', body: JSON.stringify(body) })
+}
+
 export const coachStatus = async () => DEMO ? (await demo()).demoStatus() : api('/api/coach/status')
-export const requestReview = async note => DEMO ? (await demo()).demoReview(S()) : api('/api/coach/review', { method: 'POST', body: JSON.stringify({ note: note || '' }) })
-export const requestPlan = async intake => DEMO ? (await demo()).demoPlan(S(), intake) : api('/api/coach/plan', { method: 'POST', body: JSON.stringify({ intake }) })
-export const refinePlan = async text => DEMO ? (await demo()).demoRefine(S()) : api('/api/coach/plan', { method: 'POST', body: JSON.stringify({ refine: text }) })
+export const requestReview = async note => DEMO ? (await demo()).demoReview(S()) : ask('/api/coach/review', { note: note || '' })
+export const requestPlan = async intake => DEMO ? (await demo()).demoPlan(S(), intake) : ask('/api/coach/plan', { intake })
+export const refinePlan = async text => DEMO ? (await demo()).demoRefine(S()) : ask('/api/coach/plan', { refine: text })
 export const resolvePending = async body => DEMO ? (await demo()).demoResolve() : api('/api/coach/pending/resolve', { method: 'POST', body: JSON.stringify(body) })
-export const forgetCoach = async () => DEMO ? (await demo()).demoResolve() : api('/api/coach/forget', { method: 'POST', body: '{}' })
+export const forgetCoach = async () => {
+  if (useStore.getState().update(s => { if (s.coach) s.coach = { ...s.coach, consent: null, cadence: 'off' } }) === false) throw new Error(useStore.getState().storageError || 'Could not save the Coach shutdown. Try again before closing the app.')
+  // The versioned state save revokes consent and removes held jobs in the same transaction.
+  // A separate /forget write would invalidate the base revision and race the state save.
+  if (DEMO) return (await demo()).demoResolve()
+  try { await syncCoachProfile() }
+  catch (error) { throw new Error('The Coach is off on this device, but cloud shutdown is not confirmed: ' + error.message) }
+}
 export const disclosure = async () => DEMO ? (await demo()).demoDisclosure() : api('/api/coach/disclosure')
 
 /**

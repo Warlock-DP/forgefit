@@ -66,6 +66,18 @@ function Sheet({ sheet }) {
 
 export default function Modals() {
   const sheets = useUI(s => s.sheets)
+  const closeSheet = useUI(s => s.closeSheet)
+
+  // Match tapping the backdrop on desktop without bypassing a locked check-in/dialog.
+  useEffect(() => {
+    const top = sheets[sheets.length - 1]
+    if (!top) return
+    const onKey = event => {
+      if (event.key === 'Escape' && !top.locked) { event.preventDefault(); closeSheet(top.id) }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [sheets, closeSheet])
 
   // lock the page behind any open sheet (iOS-safe)
   useEffect(() => {

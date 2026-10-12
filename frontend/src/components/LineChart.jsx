@@ -12,7 +12,7 @@ const W = 340   // viewBox width; the svg stretches to its container, height com
 // opts: { h, unit, color, axes, goal, invert }
 //   invert flips the y axis, for a scale that counts down as it gets harder (RIR). Without it
 //   a curve of reps-in-reserve reads upside down, with the hardest sets at the floor.
-export default function LineChart({ points, h = 150, unit = '', color = 'var(--acc)', axes = true, goal = null, invert = false }) {
+export default function LineChart({ points, h = 150, unit = '', color = 'var(--acc)', axes = true, goal = null, invert = false, quiet = false }) {
   const svgRef = useRef(null)
   const wrapRef = useRef(null)
   const tipRef = useRef(null)
@@ -47,6 +47,12 @@ export default function LineChart({ points, h = 150, unit = '', color = 'var(--a
   if (goal != null && isFinite(goal)) { ymin = Math.min(ymin, goal); ymax = Math.max(ymax, goal) }
   if (ymin === ymax) { ymin -= 1; ymax += 1 }
   const pad = (ymax - ymin) * 0.12; ymin -= pad; ymax += pad
+  if (quiet && axes) {
+    const raw = (ymax - ymin) / 3, pow = Math.pow(10, Math.floor(Math.log10(raw)))
+    const step = [1, 2, 2.5, 5, 10].find(m => raw <= m * pow) * pow
+    ymin = Math.floor(ymin / step) * step
+    ymax = Math.ceil(ymax / step) * step
+  }
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1
   const X = t => (t1 === t0 ? (P.l + W - P.r) / 2 : P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r))
   const Y = y => {
@@ -63,18 +69,20 @@ export default function LineChart({ points, h = 150, unit = '', color = 'var(--a
     for (let v = Math.ceil(ymin / step) * step; v <= ymax + 1e-9; v += step) {
       const y = Y(v)
       gridlines.push(<g key={'y' + v}>
-        <line x1={P.l} y1={y} x2={W - P.r} y2={y} stroke="var(--sep-op)" strokeWidth="1" strokeDasharray="2 4" />
+        {quiet ? <line x1={P.l - 3} y1={y} x2={P.l + 3} y2={y} stroke="var(--label-3)" strokeWidth="1" />
+          : <line x1={P.l} y1={y} x2={W - P.r} y2={y} stroke="var(--sep-op)" strokeWidth="1" strokeDasharray="2 4" />}
         <text x={P.l - 5} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="var(--label-2)">{fmtNum(v)}</text>
       </g>)
     }
     const d0 = new Date(t0), d1 = new Date(t1)
     const ticks = []
     let m = new Date(d0.getFullYear(), d0.getMonth() + 1, 1)
-    while (m <= d1) { ticks.push({ t: +m, txt: t(MONTHS[m.getMonth()]) }); m = new Date(m.getFullYear(), m.getMonth() + 1, 1) }
+    while (!quiet && m <= d1) { ticks.push({ t: +m, txt: t(MONTHS[m.getMonth()]) }); m = new Date(m.getFullYear(), m.getMonth() + 1, 1) }
     if (ticks.length === 0 && !single) {
-      for (let i = 0; i <= 2; i++) {
-        const tv = t0 + (t1 - t0) * i / 2, dd = new Date(tv)
-        ticks.push({ t: tv, txt: dd.getDate() + ' ' + t(MONTHS[dd.getMonth()]), anchor: i === 0 ? 'start' : i === 2 ? 'end' : 'middle' })
+      const count = quiet ? Math.min(6, Math.max(2, Math.round((t1 - t0) / 86400000))) : 2
+      for (let i = 0; i <= count; i++) {
+        const tv = t0 + (t1 - t0) * i / count, dd = new Date(tv)
+        ticks.push({ t: tv, txt: quiet && t1 - t0 <= 7 * 86400000 ? dd.getDate() : dd.getDate() + ' ' + t(MONTHS[dd.getMonth()]), anchor: i === 0 ? 'start' : i === count ? 'end' : 'middle' })
       }
     }
     const every = Math.max(1, Math.ceil(ticks.length / 7))
@@ -82,7 +90,8 @@ export default function LineChart({ points, h = 150, unit = '', color = 'var(--a
       if (i % every) return
       const x = X(tk.t)
       gridlines.push(<g key={'x' + i}>
-        <line x1={x} y1={P.t} x2={x} y2={H - P.b} stroke="var(--sep-op)" strokeWidth="1" strokeDasharray="2 4" />
+        {quiet ? <line x1={x} y1={H - P.b} x2={x} y2={H - P.b + 3} stroke="var(--sep)" strokeWidth="1" />
+          : <line x1={x} y1={P.t} x2={x} y2={H - P.b} stroke="var(--sep-op)" strokeWidth="1" strokeDasharray="2 4" />}
         <text x={x} y={H - 7} textAnchor={tk.anchor || 'middle'} fontSize="9.5" fill="var(--label-2)">{tk.txt}</text>
       </g>)
     })
@@ -111,20 +120,21 @@ export default function LineChart({ points, h = 150, unit = '', color = 'var(--a
       onMouseLeave={() => setHover(null)}
       onTouchStart={onMove} onTouchMove={onMove}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ aspectRatio: `${W}/${H}` }}>
-        <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        {!quiet && <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={color} stopOpacity=".28" />
           <stop offset="1" stopColor={color} stopOpacity="0" />
-        </linearGradient></defs>
+        </linearGradient></defs>}
         {gridlines}
+        {quiet && axes && <line x1={P.l} y1={H - P.b} x2={W - P.r} y2={H - P.b} stroke="var(--sep)" strokeWidth="1" />}
         {goal != null && isFinite(goal) && <>
-          <line x1={P.l} y1={Y(goal)} x2={W - P.r} y2={Y(goal)} stroke="var(--yellow)" strokeWidth="1.6" strokeDasharray="7 4" />
-          <text x={W - P.r - 2} y={Y(goal) - 5} textAnchor="end" fontSize="9.5" fontWeight="700" fill="var(--yellow)">{fmtNum(goal)}</text>
+          <line x1={P.l} y1={Y(goal)} x2={W - P.r} y2={Y(goal)} stroke={quiet ? 'var(--label-3)' : 'var(--yellow)'} strokeWidth="1.6" strokeDasharray="7 4" />
+          <text x={W - P.r - 2} y={Y(goal) - 5} textAnchor="end" fontSize="9.5" fontWeight="700" fill={quiet ? 'var(--label-2)' : 'var(--yellow)'}>{fmtNum(goal)}</text>
         </>}
-        <polygon points={`${P.l},${H - P.b} ${poly} ${X(last.t).toFixed(1)},${H - P.b}`} fill={`url(#${gid})`} />
-        <polyline points={poly} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {!quiet && <polygon points={`${P.l},${H - P.b} ${poly} ${X(last.t).toFixed(1)},${H - P.b}`} fill={`url(#${gid})`} />}
+        <polyline points={poly} fill="none" stroke={color} strokeWidth={quiet ? '1.4' : '2.5'} strokeLinejoin="round" strokeLinecap="round" />
         {marked && pts.map((p, i) => (p.m == null ? null :
           <circle key={'m' + i} cx={X(p.t)} cy={Y(p.y)} r={2.4 + p.m * 3} fill={color} opacity={0.3 + p.m * 0.7} />))}
-        <circle cx={X(last.t)} cy={Y(last.y)} r="4" fill={color} />
+        <circle cx={X(last.t)} cy={Y(last.y)} r={quiet ? '3' : '4'} fill={quiet ? 'var(--acc)' : color} />
         {hover && <g>
           <line className="cvl" x1={hover.x} y1={P.t} x2={hover.x} y2={H - P.b} stroke="var(--label-3)" strokeWidth="1" strokeDasharray="3 3" />
           <line className="chl" x1={P.l} y1={hover.y} x2={W - P.r} y2={hover.y} stroke="var(--label-3)" strokeWidth="1" strokeDasharray="3 3" />

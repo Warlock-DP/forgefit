@@ -1,5 +1,7 @@
 // Hindi UI strings. Keys are the English source strings (see lib/i18n.js).
+import walkthrough from './walkthrough/hi.js'
 export default {
+  ...walkthrough,
   'Confirm': 'पुष्टि करें',
   'Cancel': 'रद्द करें',
   'Delete': 'हटाएँ',

@@ -8,6 +8,12 @@ data/
 # Local config
 .env
 
+# Android signing material must never be part of the public repository.
+*.jks
+*.keystore
+keystore.properties
+signing-secrets*.xml
+
 # Build output / deps
 frontend/dist/
 node_modules/

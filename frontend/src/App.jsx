@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
@@ -13,7 +13,9 @@ import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Modals from './components/Modals.jsx'
 import Toast from './components/Toast.jsx'
+import SyncNotice from './components/SyncNotice.jsx'
 import RestTimer from './components/RestTimer.jsx'
+import Walkthrough from './components/Walkthrough.jsx'
 import Login from './views/Login.jsx'
 import Home from './views/Home.jsx'
 import Plan from './views/Plan.jsx'
@@ -37,13 +39,13 @@ function applyPrefs(theme, accent) {
   de.dataset.theme = theme === 'light' ? 'light' : 'dark'
   de.dataset.accent = ACCENTS[accent] ? accent : 'orange'
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
+  if (meta) meta.content = de.dataset.theme === 'light' ? '#f4f3ef' : '#141719'
 }
 
 function Shell() {
   const navigate = useNavigate()
   const loc = useLocation()
-  const { S, user, ready } = useStore()
+  const { S, user, ready, profileLoading } = useStore()
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
   useEffect(() => { setNav(navigate) }, [navigate])
@@ -51,16 +53,17 @@ function Shell() {
   // ForgeFit originally inherited openGym's lime default. Migrate that old default once while
   // preserving every other accent choice; lime remains available if someone selects it later.
   useEffect(() => {
+    if (!ready || profileLoading) return
     if (S._brandAccent === BRAND_ACCENT_VERSION) return
     useStore.getState().update(s => {
       if (!s.accent || s.accent === 'lime') s.accent = 'orange'
       s._brandAccent = BRAND_ACCENT_VERSION
     })
-  }, [S._brandAccent])
+  }, [S._brandAccent, ready, profileLoading])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
   // every tab/route change starts at the top of the page
-  useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
+  useLayoutEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on
   useWakeLock(!!S.active && S.keepAwake !== false)
 
@@ -80,7 +83,7 @@ function Shell() {
       <div id="app" className="vfade" key={loc.pathname}>
         <ErrorBoundary>
           {!authed ? <Login /> : (
-            <Routes>
+            <><SyncNotice /><Routes>
               <Route path="/home" element={<Home />} />
               <Route path="/plan" element={<Plan />} />
               <Route path="/plan/r/:id" element={<RoutineEdit />} />
@@ -98,7 +101,7 @@ function Shell() {
               <Route path="/coach/proposal" element={<CoachProposal />} />
               <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
-            </Routes>
+            </Routes></>
           )}
         </ErrorBoundary>
       </div>
@@ -106,6 +109,7 @@ function Shell() {
       <RestTimer />
       <Modals />
       <Toast />
+      <Walkthrough />
     </>
   )
 }

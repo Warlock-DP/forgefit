@@ -64,10 +64,10 @@ export default function CoachIntake() {
   const canNext = key !== 'goal' || (p.goal && p.experience)
   const last = step === STEPS.length - 1
 
-  const save = () => { update(s => { const c = (s.coach = s.coach || emptyCoach()); c.profile = p }) }
+  const save = () => update(s => { const c = (s.coach = s.coach || emptyCoach()); c.profile = p })
 
   const finish = async () => {
-    save()
+    if (save() === false) { toast(useStore.getState().storageError); return }
     if (editing) { toast(t('Saved')); nav('/coach'); return }
     setBusy(true)
     try {

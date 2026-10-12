@@ -1,5 +1,7 @@
 // German UI strings. Keys are the English source strings (see lib/i18n.js).
+import walkthrough from './walkthrough/de.js'
 export default {
+  ...walkthrough,
   // --- generic ---
   'Confirm': 'Bestätigen',
   'Cancel': 'Abbrechen',

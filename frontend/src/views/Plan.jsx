@@ -20,7 +20,7 @@ export default function Plan() {
 
   const addRoutine = () => {
     const r = { id: uid(), name: t('New routine'), emoji: DEFAULT_GLYPH, ex: [] }
-    update(s => { s.routines.push(r) })
+    if (update(s => { s.routines.push(r) }) === false) return
     nav('/plan/r/' + r.id)
   }
 
@@ -32,7 +32,7 @@ export default function Plan() {
     </div>
     <div className="cols"><div>
       <h4 className="sec">{t('Week schedule')}</h4>
-      <div className="list" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="list" data-tour="schedule" style={{ display: 'flex', flexDirection: 'column' }}>
         {[1, 2, 3, 4, 5, 6, 0].map(d => {
           const r = S.routines.find(x => x.id === S.week[d])
           return <div key={d} className="item" onClick={() => dayAssignSheet(d)}>
@@ -42,7 +42,7 @@ export default function Plan() {
         })}
       </div>
     </div><div>
-      <div className="row between" style={{ marginTop: 22, marginBottom: 10 }}>
+      <div className="row between" data-tour="routines" style={{ marginTop: 22, marginBottom: 10 }}>
         <h4 className="sec" style={{ margin: 0 }}>{t('Routines')}</h4>
         <Button size="sm" variant="tinted" icon="plus" onClick={addRoutine}>{t('New')}</Button>
       </div>

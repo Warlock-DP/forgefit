@@ -53,7 +53,7 @@ function CreatedPlan({ p, S, update, toast, nav, refresh }) {
 
   const accept = () => {
     try {
-      update(s => { applyCreatedPlan(s, p, { schedule }) })
+      if (update(s => { applyCreatedPlan(s, p, { schedule }) }) === false) { toast(useStore.getState().storageError); return }
       resolvePending({ accepted: ['plan'] }).catch(() => {})
       toast(t('Your plan is live'))
       nav('/plan')
@@ -63,7 +63,7 @@ function CreatedPlan({ p, S, update, toast, nav, refresh }) {
     title: t('Discard this plan?'), message: t('Nothing is saved, and you can ask again anytime.'),
     confirmText: t('Discard'), danger: true,
     onConfirm: () => {
-      update(s => { recordDismissal(s, p) })
+      if (update(s => { recordDismissal(s, p) }) === false) { toast(useStore.getState().storageError); return }
       resolvePending({ dismissed: true }).catch(() => {})
       nav('/coach')
     }
@@ -141,7 +141,7 @@ function ChangeSet({ p, S, update, toast, nav }) {
     const ids = [...accepted].filter(id => usable.some(c => c.id === id))
     if (!ids.length) { discard(); return }
     try {
-      update(s => { applyChangeSet(s, marked, ids) })
+      if (update(s => { applyChangeSet(s, marked, ids) }) === false) { toast(useStore.getState().storageError); return }
       resolvePending({ accepted: ids, rejected: marked.changes.filter(c => !ids.includes(c.id)).map(c => c.id) }).catch(() => {})
       toast(t(ids.length === 1 ? '{0} change applied' : '{0} changes applied', ids.length))
       nav('/plan')
@@ -151,7 +151,7 @@ function ChangeSet({ p, S, update, toast, nav }) {
     title: t('Dismiss these suggestions?'), message: t('Nothing changes, and the Coach will remember you turned these down.'),
     confirmText: t('Dismiss'), danger: true,
     onConfirm: () => {
-      update(s => { recordDismissal(s, marked) })
+      if (update(s => { recordDismissal(s, marked) }) === false) { toast(useStore.getState().storageError); return }
       resolvePending({ dismissed: true }).catch(() => {})
       nav('/coach')
     }

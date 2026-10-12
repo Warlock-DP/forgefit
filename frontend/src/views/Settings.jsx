@@ -12,8 +12,9 @@ import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
 import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
 import { coachAvailable, hasConsent } from '../lib/coach.js'
-import { forgetCoach } from '../lib/coach-api.js'
+import { parseBackup } from '../lib/backup.js'
 import { OpenRouterSettingsEntry } from './AISettings.jsx'
+import { SyncSettings } from '../components/SyncNotice.jsx'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 
@@ -22,7 +23,7 @@ export default function Settings() {
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
   const config = useStore(s => s.config)
-  const { update, replaceState, setUser, pullState, pushState, signOut, signOutAll, resetDemo } = useStore()
+  const { update, importBackup, resetAll, setUser, pullState, pushState, signOut, signOutAll, resetDemo } = useStore()
   const toast = useUI(s => s.toast)
   const fileRef = useRef(null)
   const importRef = useRef(null)
@@ -41,15 +42,21 @@ export default function Settings() {
     toast(t('Backup exported'))
   }
   const doImport = ev => {
-    const f = ev.target.files[0]; if (!f) return
+    const f = ev.target.files[0]; ev.target.value = ''; if (!f) return
     const rd = new FileReader()
     rd.onload = () => {
       try {
-        const data = JSON.parse(rd.result)
-        if (!data.workouts || !data.routines) throw new Error('not a ForgeFit backup')
-        confirmSheet({ title: t('Import backup?'), message: t('This replaces all current data with the backup file.'), confirmText: t('Import'), danger: true, onConfirm: () => { replaceState(Object.assign(JSON.parse(JSON.stringify(DEF)), data), true); toast(t('Backup imported')) } })
+        const data = parseBackup(rd.result, DEF)
+        const uid = user?.id
+        confirmSheet({ title: t('Import backup?'), message: t('This replaces current data with the backup file. A recovery copy is kept on this device.'), confirmText: t('Import'), danger: true, onConfirm: () => {
+          try {
+            if (useStore.getState().user?.id !== uid) throw new Error('The profile changed. Choose the backup again for the current profile.')
+            importBackup(data); toast(t('Backup imported'))
+          } catch (e) { toast(t('Import failed: {0}', e.message)) }
+        } })
       } catch (e) { toast(t('Import failed: {0}', e.message)) }
     }
+    rd.onerror = () => toast(t('Import failed: {0}', 'Could not read the backup file'))
     rd.readAsText(f)
   }
   const signInHere = async () => {
@@ -57,6 +64,10 @@ export default function Settings() {
     catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Sign-in failed')) }
   }
   const registerHere = () => useUI.getState().openSheet(close => <RegisterInline close={close} setUser={setUser} pushState={pushState} pullState={pullState} toast={toast} />)
+  const signOutHere = async () => {
+    try { await signOut(); nav('/home'); toast(t('Signed out')) }
+    catch (e) { toast(e.message || t('Could not sign out — your local data is unchanged.')) }
+  }
   // Ends the profile's sessions on every device — this one included, so on success it lands in
   // the same place as the plain sign-out above (home, local data cleared). On failure nothing
   // local is touched: still signed in here, and say so rather than leaving a half-signed-out app.
@@ -66,7 +77,7 @@ export default function Settings() {
     confirmText: t('Sign out everywhere'), danger: true,
     onConfirm: async () => {
       try { await signOutAll(); nav('/home'); toast(t('Signed out on all devices')) }
-      catch (e) { toast(t('Could not sign out everywhere — you are still signed in.')) }
+      catch (e) { toast(e.message || t('Could not sign out everywhere — you are still signed in.')) }
     },
   })
 
@@ -91,7 +102,7 @@ export default function Settings() {
       </> : user ? <>
         <Row icon="personCircle" iconTint="var(--grey)" title={user.name} subtitle={t('Signed in with passkey — data syncs to this profile.')} />
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
-        <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={() => confirmSheet({ title: t('Sign out?'), message: t('Your data is synced to your profile first, then cleared from this device.'), confirmText: t('Sign out'), danger: true, onConfirm: () => { signOut(); nav('/home') } })} />
+        <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={() => confirmSheet({ title: t('Sign out?'), message: t('Your current profile is synced first, then signed out. If saving fails, you stay signed in and nothing is deleted. Any recovery backups stay on this device.'), confirmText: t('Sign out'), danger: true, onConfirm: signOutHere })} />
         <Row icon="shield" iconTint="var(--red)" title={t('Sign out everywhere')} subtitle={t('Ends this profile’s sessions on all your devices.')} danger onClick={signOutEverywhere} />
       </> : webauthnOK() ? <>
         <Row icon="sparkles" iconTint="var(--acc)" title={t('Create passkey profile')} subtitle={t('Keeps your data safe and separate per person.')} accessory="chevron" onClick={registerHere} />
@@ -101,12 +112,19 @@ export default function Settings() {
       )}
     </Section>
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
+    {!DEMO && !MOBILE && <SyncSettings />}
 
     {/* Setup must stay discoverable before the Coach has a key or is enabled. */}
     {!DEMO && !MOBILE && <OpenRouterSettingsEntry user={user} onOpen={() => nav('/settings/ai')} />}
 
+    <Section title={t('Help')} data-tour="tour-help" footer={S.active ? t('Finish your workout before starting the walkthrough.') : undefined}>
+      <Row icon="lightbulb" iconTint="var(--acc)" title={t('App walkthrough')}
+        subtitle={t('A guided tour of planning, workouts, progress, backups, and AI')}
+        accessory="chevron" onClick={() => useUI.getState().startWalkthrough()} />
+    </Section>
+
     {/* ---------- general ---------- */}
-    <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
+    <Section title={t('General')} data-tour="preferences" footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
       <SelectRow
         icon="globe" iconTint="var(--blue)" title={t('Language')}
         value={S.lang || 'en'} onChange={v => update(s => { s.lang = v })}
@@ -190,7 +208,7 @@ export default function Settings() {
     </Section>
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}
-    <Section title={t('Data')}>
+    <Section title={t('Data')} data-tour="backups">
       <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan (PPL)')} accessory="chevron" onClick={loadStarterPlan} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
         subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
@@ -199,7 +217,15 @@ export default function Settings() {
       <Row icon="download" iconTint="var(--blue)" title={t('Export backup (JSON)')} accessory="chevron" onClick={doExport} />
       {/* Also drops anything the Coach is holding server-side: a wipe that leaves a pending
           proposal on the server behind would be a wipe in name only. */}
-      <Row icon="trash" iconTint="var(--red)" title={t('Reset everything')} danger onClick={() => confirmSheet({ title: t('Reset everything?'), message: t('Deletes your plan, workouts and body weight on this device. This cannot be undone.'), confirmText: t('Delete everything'), danger: true, onConfirm: () => { if (user) forgetCoach().catch(() => {}); replaceState(JSON.parse(JSON.stringify(DEF)), true); nav('/home'); toast(t('All data reset')) } })} />
+      <Row icon="trash" iconTint="var(--red)" title={t('Reset everything')} danger onClick={() => {
+        const uid = user?.id
+        confirmSheet({ title: t('Reset everything?'), message: t('Deletes your plan, workouts and body weight, and turns the Coach off. A recovery copy is kept on this device.'), confirmText: t('Delete everything'), danger: true, onConfirm: async () => {
+          try {
+            if (useStore.getState().user?.id !== uid) throw new Error('The profile changed. Open Settings again before resetting.')
+            await resetAll(); nav('/home'); toast(t('All data reset'))
+          } catch (e) { toast(e.message || t('Could not reset the cloud profile')) }
+        } })
+      }} />
     </Section>
     <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={doImport} />
     {/* Reset after reading so picking the same file twice still fires onChange. */}
@@ -363,8 +389,8 @@ function RegisterInline({ close, setUser, pushState, pullState, toast }) {
     if (!n) { toast(t('Enter a name')); return }
     if (inviteOnly && !code.trim()) { toast(t('An invite code is required')); return }
     try {
-      const u = await passkeyRegister(n, code.trim()); setUser(u); close()
-      if (hasData(useStore.getState().S)) { await pushState(); toast(t('Profile created — data moved into it')) }
+      const u = await passkeyRegister(n, code.trim()); setUser(u, { adoptLocal: true }); close()
+      if (hasData(useStore.getState().S)) { const saved = await pushState(); toast(t(saved ? 'Profile created — data moved into it' : 'Profile created. Your data is saved locally; cloud sync needs attention in Settings.')) }
       else { await pullState(); toast(t('Welcome, {0}', u.name)) }
     } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Registration failed')) }
   }
