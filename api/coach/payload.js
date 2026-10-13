@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import library from './library.json' with { type: 'json' };
+import { compatible, requirements } from './equipment.js';
 
 const DATA = process.env.DATA_DIR || '/data';
 const LIBRARY = library.exercises;
@@ -131,13 +132,7 @@ export function cleanPlan(S) {
 
 /* ---------- the library slice the model gets to choose from ---------- */
 export function librarySlice(S, equipment) {
-  const wanted = (equipment || []).map(x => String(x).toLowerCase());
-  const customs = (S.customEx || []).map(c => ({ id: c.id, n: c.n, bp: c.bp, tg: null, eq: 'custom', custom: true }));
-  // No equipment stated (or "everything") ⇒ the whole catalogue. Filtering to nothing would
-  // leave the Coach unable to propose anything at all, which is a worse failure than a
-  // slightly larger payload.
-  const base = wanted.length ? LIBRARY.filter(e => wanted.includes((e.eq || '').toLowerCase())) : LIBRARY;
-  return [...customs, ...(base.length ? base : LIBRARY)];
+  return LIBRARY.filter(e => compatible(e, equipment)).map(e => ({ ...e, requirements: requirements(e) }));
 }
 export const libraryHas = id => LIB_BY_ID.has(id);
 export const libraryName = id => LIB_BY_ID.get(id)?.n || null;
@@ -252,11 +247,13 @@ export function build(S, uid, opts = {}) {
     },
     coachProfile: profile ? {
       goal: profile.goal || null,
+      secondaryGoals: (Array.isArray(profile.secondaryGoals) ? profile.secondaryGoals : []).filter(g => ['strength', 'muscle', 'general', 'fatloss', 'endurance'].includes(g)).slice(0, 4),
       experience: profile.experience || null,
       daysPerWeek: profile.daysPerWeek || null,
       preferredDays: profile.preferredDays || [],
       sessionMin: profile.sessionMin || null,
       equipment: profile.equipment || [],
+      dumbbellWeights: (Array.isArray(profile.dumbbellWeights) ? profile.dumbbellWeights : []).filter(w => Number.isFinite(w) && w > 0 && w <= 200).slice(0, 20),
       limitations: profile.limitations || '',
       likes: profile.likes || '',
       dislikes: profile.dislikes || '',
@@ -265,6 +262,7 @@ export function build(S, uid, opts = {}) {
     plan: cleanPlan(S)
   };
 
+  if (opts.messages) p.conversation = opts.messages;
   // What the user already turned down, so the Coach does not re-propose it without new
   // evidence (FR-26). Summaries only — the log's full before/after stays on the device.
   const declined = (coach.log || [])

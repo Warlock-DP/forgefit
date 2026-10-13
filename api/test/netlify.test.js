@@ -72,6 +72,63 @@ async function connect(store, admin, adapter) {
 }
 const testAdapter = { async invoke() { return { code: 0, text: '{"coach_contract":1,"ok":true}' }; } };
 
+test('planning chat persists private follow-ups across workers without changing workouts', async () => {
+  const store = memoryStore(); const { admin, member } = await seed(store);
+  const before = await store.state(member.id);
+  const adapter = { async invoke({ prompt }) {
+    if (!prompt.includes('planning conversation')) return testAdapter.invoke();
+    return { code: 0, text: JSON.stringify({ coach_contract: 1, reply: 'How many days would you like?', plan: null }) };
+  } };
+  const coach = await connect(store, admin, adapter);
+  const response = await coach.route('POST /api/coach/chat', { text: 'Help plan my week', shareChat: true }, req('/api/coach/chat', 'POST', {}, member));
+  const { job } = await response.json(); await coach.execute(member.id, job.id);
+  const fresh = createCoach({ store, cfg, adapter, fetchImpl: dispatch });
+  const status = await (await fresh.route('GET /api/coach/status', {}, req('/api/coach/status', 'GET', null, member))).json();
+  assert.equal(status.pending, null); assert.equal(status.messages.length, 2);
+  assert.equal(status.messages[0].content, 'Help plan my week');
+  assert.deepEqual(await store.state(member.id), before);
+  const other = await (await fresh.route('GET /api/coach/status', {}, req('/api/coach/status', 'GET', null, admin))).json();
+  assert.deepEqual(other.messages, []);
+  await fresh.route('POST /api/coach/forget', {}, req('/api/coach/forget', 'POST', {}, member));
+  assert.equal(await store.get('coach:' + member.id), null);
+});
+
+test('planning chat rejects empty messages and cannot run without an AI key', async () => {
+  const store = memoryStore(); const { admin, member } = await seed(store);
+  const disconnected = createCoach({ store, cfg, fetchImpl: dispatch, adapter: testAdapter });
+  await assert.rejects(() => disconnected.route('POST /api/coach/chat', { text: 'Hello' }, req('/api/coach/chat', 'POST', {}, member)), e => e.status === 503);
+  const coach = await connect(store, admin, testAdapter);
+  for (const text of ['', ' ', 'x'.repeat(1001)]) await assert.rejects(() => coach.route('POST /api/coach/chat', { text, shareChat: true }, req('/api/coach/chat', 'POST', {}, member)), e => e.status === 400);
+  await assert.rejects(() => coach.route('POST /api/coach/chat', { text: 'Hello' }, req('/api/coach/chat', 'POST', {}, member)), e => e.code === 'consent');
+});
+
+test('chat creates a preview, remembers context, and rejects an incompatible revision', async () => {
+  const store = memoryStore(); const { admin, member } = await seed(store);
+  const S = await store.state(member.id);
+  S.coach.profile = { equipment: ['dumbbell', 'pull-up bar'], dumbbellWeights: [4, 6, 10], daysPerWeek: 1 };
+  await store.saveState(member.id, S);
+  let incompatible = false, prompts = [];
+  const adapter = { async invoke({ prompt }) {
+    if (!prompt.includes('planning conversation')) return testAdapter.invoke();
+    prompts.push(prompt);
+    return { code: 0, text: JSON.stringify({ coach_contract: 1, reply: 'Review this before saving.', plan: {
+      routines: [{ id: 'r1', name: 'Home', ex: [{ id: incompatible ? '0291' : '1760', weight: 6, reps: 10 }] }], week: { 1: 'r1' }
+    } }) };
+  } };
+  const coach = await connect(store, admin, adapter);
+  const first = await coach.enqueue(member.id, { kind: 'chat', text: 'Build a plan' }); await coach.execute(member.id, first.id);
+  const firstStatus = await (await coach.route('GET /api/coach/status', {}, req('/api/coach/status', 'GET', null, member))).json();
+  assert.equal(firstStatus.pending.kind, 'create'); assert.equal(firstStatus.pending.bundle.routines[0].ex[0].id, '1760');
+  assert.deepEqual(await store.state(member.id), S);
+  incompatible = true;
+  const second = await coach.enqueue(member.id, { kind: 'chat', text: 'Revise my plan' }); await coach.execute(member.id, second.id);
+  assert.ok(prompts.at(-1).includes('Build a plan'));
+  const rec = await store.get('coach:' + member.id);
+  assert.equal(rec.history.at(-1).outcome, 'failed');
+  assert.equal(rec.pending.id, first.id, 'a failed revision preserves the compatible preview');
+  assert.deepEqual(await store.state(member.id), S);
+});
+
 test('Netlify fails closed without private runtime configuration', async () => {
   const response = await createApi({ env: {}, store: memoryStore() })(req('/api/health'));
   assert.equal(response.status, 503);
@@ -81,7 +138,7 @@ test('health/config report Netlify + Neon without account counts or secrets', as
   const response = await app(store)(req('/api/health'));
   assert.deepEqual(await response.json(), { ok: true, app: 'ForgeFit', hosting: 'netlify-functions', storage: 'neon', runtimeStorage: 'neon' });
   const conf = await (await app(store)(req('/api/config'))).json();
-  assert.equal(conf.invite_only, true); assert.equal(conf.coach, undefined); assert.equal(JSON.stringify(conf).includes(env.SESSION_SECRET), false);
+  assert.equal(conf.invite_only, true); assert.equal(conf.coach.enabled, false); assert.equal(conf.coach.connected, false); assert.equal(JSON.stringify(conf).includes(env.SESSION_SECRET), false);
 });
 test('signup challenges survive cold starts and can only be consumed once', async () => {
   const store = memoryStore();
@@ -259,7 +316,7 @@ test('owner can save and test an encrypted OpenRouter key before enabling AI', a
   const stored = await store.get('netlify-coach-config');
   assert.equal(stored.enabled, false);
   assert.equal(JSON.stringify(stored).includes('synthetic-openrouter-key'), false);
-  assert.deepEqual(await coach.publicConfig(), {});
+  assert.equal((await coach.publicConfig()).coach.enabled, false);
 });
 test('Netlify blocks paid providers/models and enforces free-tier hard ceilings', async () => {
   const store = memoryStore(); const { admin } = await seed(store); const coach = await connect(store, admin, testAdapter);

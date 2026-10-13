@@ -15,6 +15,20 @@ import { uid } from './format.js'
 import { mergePlan } from './plan-share.js'
 import { POLICIES } from './progression.js'
 import { t } from './i18n.js'
+import { compatible } from '../../../api/coach/equipment.js'
+
+function checkEquipment(s, exercises) {
+  const profile = s.coach?.profile
+  if (!Array.isArray(profile?.equipment)) return
+  for (const e of exercises) {
+    const entry = EXIDX[e.id]
+    if (!entry || !compatible({ ...entry, id: e.id }, profile.equipment)) throw new Error('Your equipment changed or this exercise is unverified. Ask the Coach for a new preview.')
+    if (entry.eq === 'dumbbell' && e.weight > 0 && profile.dumbbellWeights?.length) {
+      const kg = s.unit === 'lb' ? e.weight / 2.2046226218 : e.weight
+      if (!profile.dumbbellWeights.some(w => Math.abs(w - kg) < 0.05)) throw new Error('This dumbbell weight is unavailable. Ask for a new preview.')
+    }
+  }
+}
 
 // Bumping this re-prompts everyone: it means what we share, or who we share it with, changed.
 export const CONSENT_VERSION = 1
@@ -41,7 +55,7 @@ const coachOf = s => (s.coach = s.coach || emptyCoach())
 // interesting feature from the page people are sent to look at it on would be a strange
 // choice. The mobile build stays out — there is no server there to fake anything with.
 export const coachAvailable = (config, user, { demo, mobile } = {}) =>
-  mobile ? false : demo ? true : !!(config?.coach?.enabled && user)
+  mobile ? false : demo ? true : !!((config?.coach?.enabled || config?.coach?.available) && user)
 export const hasConsent = S => !!S?.coach?.consent?.agreedAt && S.coach.consent.version === CONSENT_VERSION
 
 /* ============================ plan fingerprint ============================ */
@@ -221,6 +235,7 @@ function trim(s) {
  */
 export function applyCreatedPlan(s, proposal, { schedule } = {}) {
   validateProposal(proposal)
+  checkEquipment(s, proposal.bundle.routines.flatMap(r => r.ex))
   pushSnapshot(s, proposal.id, t('Before the Coach’s plan'))
   const bundle = proposal.bundle
   // The Coach's `why` texts are for the review screen; they have no place in the routine data.
@@ -346,6 +361,7 @@ export function applyChangeSet(s, proposal, acceptedIds) {
   const accepted = new Set(acceptedIds || [])
   const changes = (proposal.changes || []).filter(c => accepted.has(c.id) && c.status !== 'stale')
   if (!changes.length) return { applied: 0 }
+  checkEquipment(s, changes.flatMap(c => c.type === 'add-routine' ? c.after.ex : ['add-exercise', 'swap-exercise'].includes(c.type) ? [c.after] : []))
 
   pushSnapshot(s, proposal.id, t('Before the Coach’s changes'))
   const applied = []

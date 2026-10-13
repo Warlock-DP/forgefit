@@ -15,6 +15,7 @@ import {
 } from '../lib/coach-api.js'
 import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
+import CoachChat from '../components/CoachChat.jsx'
 import { Section, Row, Button, TextArea, Switch, SelectRow } from '../components/ui.jsx'
 
 /* The Coach's home: what it's doing, what it's proposing, what it has done before, and every
@@ -42,7 +43,8 @@ export default function Coach() {
   const toast = useUI(s => s.toast)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
-  const { job, pending, cap, refresh } = useCoachStatus(true)
+  const status = useCoachStatus(true)
+  const { job, pending, cap, refresh } = status
 
   // Gating lives in one predicate; if the instance isn't offering the Coach this route simply
   // isn't a place you can be.
@@ -93,12 +95,15 @@ export default function Coach() {
       </div>
     </div>
 
+    <div className="muted small" style={{ marginBottom: 14 }}>{DEMO ? 'Demo — no AI connected' : config?.coach?.chat ? config.coach.enabled ? `OpenRouter · ${config.coach.model || 'configured model'}` : config.coach.connected ? 'OpenRouter connected — AI disabled' : 'No AI connected — configure OpenRouter to use the Coach' : config?.coach?.providerLabel || 'Coach'}</div>
+
     {!consented
       ? <ConsentCard onDone={() => refresh()} />
       : <>
         <StatusCard job={job} pending={pending} nav={nav} />
+        {(DEMO || config?.coach?.chat) && <CoachChat key={user?.id || 'demo'} config={config} demo={DEMO} status={status} refresh={refresh} user={user} />}
 
-        {!job && !pending && <div className="card">
+        {(DEMO || config?.coach?.enabled) && !job && !pending && <div className="card">
           <h2 style={{ margin: '0 0 6px' }}>{t('Ask for a review')}</h2>
           <div className="muted small" style={{ marginBottom: 10 }}>
             {t('The Coach reads what you have actually logged since its last look and suggests changes to your plan — each one with its reason.')}
@@ -112,7 +117,7 @@ export default function Coach() {
           </div>}
         </div>}
 
-        {!S.routines.length && <div className="card">
+        {(DEMO || config?.coach?.enabled) && !S.routines.length && <div className="card">
           <div className="muted small" style={{ marginBottom: 10 }}>{t('No plan yet — the Coach can build you one from a few questions.')}</div>
           <Button variant="primary" icon="sparkles" onClick={() => nav('/coach/intake')}>{t('Let the Coach build my plan')}</Button>
         </div>}
@@ -154,7 +159,7 @@ function ConsentCard({ onDone }) {
 
   const agree = async () => {
     if (update(s => { s.coach = { ...(s.coach || emptyCoach()), consent: { agreedAt: new Date().toISOString(), version: CONSENT_VERSION } } }) === false) { toast(useStore.getState().storageError); return }
-    try { await syncCoachProfile(); toast(t('The Coach is on')); onDone() }
+    try { await syncCoachProfile(); toast(DEMO ? 'Demo enabled — no AI connected' : config?.coach?.enabled ? t('The Coach is on') : 'Consent saved. Connect OpenRouter to enable AI.'); onDone() }
     catch (e) { toast(e.message || t('Consent is saved locally; cloud sync needs attention in Settings.')) }
   }
 
@@ -162,7 +167,7 @@ function ConsentCard({ onDone }) {
     <h3>{t('Before the Coach starts')}</h3>
     <div className="muted small" style={{ lineHeight: 1.5, marginBottom: 12 }}>
       {viaOpenRouter
-        ? 'When you ask for a plan or review, ForgeFit sends the following to OpenRouter using the instance owner’s account. An external model provider generates the answer.'
+        ? 'When you ask for a plan, review, or chat reply, ForgeFit sends the following and your recent chat messages to OpenRouter using the instance owner’s account. Chat is saved to your account for follow-ups. An external model provider generates the answer.'
         : t('When you ask for a plan or a review, this instance sends the following to {0}, running on this server under the instance owner’s account.',
           info?.providerLabel || config?.coach?.providerLabel || t('the configured AI provider'))}
     </div>

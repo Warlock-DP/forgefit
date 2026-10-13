@@ -42,6 +42,10 @@ const ask = async (path, body) => {
 export const coachStatus = async () => DEMO ? (await demo()).demoStatus() : api('/api/coach/status')
 export const requestReview = async note => DEMO ? (await demo()).demoReview(S()) : ask('/api/coach/review', { note: note || '' })
 export const requestPlan = async intake => DEMO ? (await demo()).demoPlan(S(), intake) : ask('/api/coach/plan', { intake })
+export const requestChat = async text => {
+  if (DEMO) throw new Error('Demo — no AI connected. Connect OpenRouter in the hosted app to chat.')
+  return ask('/api/coach/chat', { text, shareChat: true })
+}
 export const refinePlan = async text => DEMO ? (await demo()).demoRefine(S()) : ask('/api/coach/plan', { refine: text })
 export const resolvePending = async body => DEMO ? (await demo()).demoResolve() : api('/api/coach/pending/resolve', { method: 'POST', body: JSON.stringify(body) })
 export const forgetCoach = async () => {

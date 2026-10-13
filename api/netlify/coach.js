@@ -8,7 +8,7 @@ import { consentKey, hasConsent, revokeConsent, clearConsent } from './consent.j
 
 const defaults = () => ({ enabled: false, provider: 'openrouter', model: null,
   caps: { perProfileDaily: 5, instanceDaily: 20 }, auth: null, log: [] });
-const record = () => ({ current: null, pending: null, history: [] });
+const record = () => ({ current: null, pending: null, history: [], messages: [] });
 const today = () => new Date().toISOString().slice(0, 10);
 const quotaKey = () => 'coach-quota:' + today();
 const configKey = 'netlify-coach-config';
@@ -49,8 +49,7 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
   };
   const publicConfig = async () => {
     const conf = await getConfig();
-    if (cfg.coachDisabled || !conf.enabled || !keyFor(conf)) return {};
-    return { coach: { enabled: true, provider: 'openrouter', providerLabel: 'OpenRouter (free only)', contract: 1,
+    return { coach: { enabled: !cfg.coachDisabled && !!conf.enabled && !!keyFor(conf), available: !cfg.coachDisabled, connected: !!keyFor(conf), model: conf.model || DEFAULT_MODEL, chat: true, provider: 'openrouter', providerLabel: 'OpenRouter (free only)', contract: 1,
       scheduling: cfg.reminders, scheduledWindowMinutes: 15 } };
   };
   async function dispatch(task) {
@@ -73,6 +72,7 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
       }
       rec.current = null;
       if (result.pending !== undefined) rec.pending = result.pending;
+      if (result.reply) rec.messages = [...(rec.messages || []), { role: 'user', content: current.text }, { role: 'assistant', content: result.reply, model: result.model }].slice(-20);
       historyEntry(rec, { id, kind: current.kind, trigger: current.trigger, outcome: result.outcome,
         errorClass: result.errorClass || null, at: Date.now() });
       await tx.set('coach:' + uid, rec);
@@ -106,7 +106,7 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
       await tx.set(qKey, quota);
       const job = { id: randomId(), kind: opts.kind, trigger: opts.trigger || 'manual', state: 'queued', startedAt: Date.now(),
         // Persist only job arguments. The current workout snapshot is read at execution.
-        intake: opts.intake || null, note: opts.note || null, refine: opts.refine || null };
+        intake: opts.intake || null, note: opts.note || null, refine: opts.refine || null, text: opts.text || null };
       rec.current = job; await tx.set('coach:' + uid, rec); return job;
     });
     try { await dispatch({ type: 'coach', uid, id: job.id }); }
@@ -125,7 +125,7 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
         rec.current = null; await tx.set('coach:' + uid, rec); return null;
       }
       rec.current.state = 'running'; await tx.set('coach:' + uid, rec);
-      return { job: rec.current, S, previous: rec.pending, conf };
+      return { job: rec.current, S, previous: rec.pending, messages: rec.messages || [], conf };
     });
   }
   async function reserveRequest(uid, id, testRequest = false) {
@@ -146,10 +146,12 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
   async function execute(uid, id) {
     const claimed = await claim(uid, id);
     if (!claimed) return; // Netlify retries and concurrent deliveries cannot duplicate inference.
-    const { job, S, previous } = claimed;
+    const { job, S, previous, messages, conf } = claimed;
     try {
       const payload = build(S, uid, { kind: job.kind, intake: job.intake, note: job.note, refine: job.refine,
-        previous: previous?.bundle || null, secret: cfg.secret });
+        previous: previous?.bundle || null, secret: cfg.secret,
+        messages: job.kind === 'chat' ? [...messages, { role: 'user', content: job.text }] : null });
+      if (job.kind === 'chat' && previous?.bundle) payload.previousProposal = previous.bundle;
       let result, repair = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         const reserved = await reserveRequest(uid, id);
@@ -161,10 +163,11 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
         repair = { previous: result.raw, errors: result.errors };
       }
       if (!result.ok) return finish(uid, id, { outcome: 'failed', errorClass: result.errorClass });
+      if (job.kind === 'chat' && !result.result) return finish(uid, id, { outcome: 'answered', reply: result.reply, model: conf.model || DEFAULT_MODEL });
       if (result.nochange) return finish(uid, id, { outcome: 'nochange', pending: null });
-      const pending = { id, kind: job.kind, createdAt: Date.now(), expiresAt: Date.now() + 14 * 86400000,
+      const pending = { id, kind: job.kind === 'chat' ? 'create' : job.kind, createdAt: Date.now(), expiresAt: Date.now() + 14 * 86400000,
         planHash: hashPlan(canonicalPlan(S)), iteration: job.refine ? (previous?.iteration || 1) + 1 : 1, ...result.result };
-      await finish(uid, id, { outcome: 'ready', pending });
+      await finish(uid, id, { outcome: 'ready', pending, reply: result.reply, model: conf.model || DEFAULT_MODEL });
     } catch { await finish(uid, id, { outcome: 'failed', errorClass: 'internal' }); }
   }
   async function testRun() {
@@ -182,7 +185,7 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
     const admin = key.includes('/api/admin/');
     const user = requireUser(request, core, cfg, admin);
     const conf = await getConfig();
-    if (!admin && !['GET /api/coach/disclosure', 'POST /api/coach/forget'].includes(key)) check(conf);
+    if (!admin && !['GET /api/coach/disclosure', 'GET /api/coach/status', 'POST /api/coach/forget'].includes(key)) check(conf);
     switch (key) {
       case 'GET /api/coach/disclosure': return json(200, { provider: 'openrouter', providerLabel: 'OpenRouter (free only)', categories: DATA_CATEGORIES, version: 1 });
       case 'GET /api/coach/status': {
@@ -191,8 +194,12 @@ export function createCoach({ store, cfg, fetchImpl = fetch, adapter = openroute
         });
         const quota = await store.get(quotaKey());
         return json(200, { job: rec.current ? { id: rec.current.id, kind: rec.current.kind, state: rec.current.state, startedAt: rec.current.startedAt } : null,
-          pending: rec.pending, cap: { used: quota?.perUser?.[user.id] || 0, limit: Math.min(5, conf.caps.perProfileDaily || 5) } });
+          pending: rec.pending, messages: rec.messages || [], lastResult: rec.history?.at(-1) || null, cap: { used: quota?.perUser?.[user.id] || 0, limit: Math.min(5, conf.caps.perProfileDaily || 5) } });
       }
+      case 'POST /api/coach/chat':
+        if (body.shareChat !== true) throw new ApiError(403, 'Agree to save and share chat messages before sending', 'consent');
+        if (typeof body.text !== 'string' || !body.text.trim() || body.text.length > 1000) throw new ApiError(400, 'Enter a message of 1–1000 characters');
+        return json(202, { job: await enqueue(user.id, { kind: 'chat', text: body.text.trim() }, request) });
       case 'POST /api/coach/plan':
         if (body.intake && (typeof body.intake !== 'object' || Array.isArray(body.intake) || JSON.stringify(body.intake).length > 12000)) throw new ApiError(400, 'intake is too large or invalid');
         return json(202, { job: await enqueue(user.id, { kind: 'create', intake: body.intake || null, refine: body.refine ? String(body.refine).slice(0, 1000) : null }, request) });

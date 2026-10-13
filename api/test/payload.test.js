@@ -96,12 +96,12 @@ test('creation payload carries working weights so baselines start from evidence'
 });
 
 test('the library is filtered to the equipment someone actually has', () => {
-  const all = payload.librarySlice({}, []).length;
+  const all = payload.librarySlice({}, ['full gym']).length;
   const dumbbell = payload.librarySlice({}, ['dumbbell']).length;
   assert.ok(dumbbell < all && dumbbell > 0);
-  // Custom exercises always travel: they exist nowhere else and the model cannot guess them.
+  // Unknown custom requirements cannot bypass home equipment restrictions.
   const withCustom = payload.librarySlice({ customEx: [{ id: 'cx1', n: 'Sandbag carry', bp: 'back' }] }, ['dumbbell']);
-  assert.equal(withCustom[0].id, 'cx1');
+  assert.equal(withCustom.some(e => e.id === 'cx1'), false);
 });
 
 test('equipment nobody in the library has still yields a usable library', () => {
