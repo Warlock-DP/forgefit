@@ -12,6 +12,27 @@ import { registerCustom } from './exercises.js'
 import * as serverPayload from '../../../api/coach/payload.js'
 import { hashPlan as serverHashPlan } from '../../../api/coach/jobs.js'
 
+describe('home equipment approval guard', () => {
+  const preview = (id, weight = 6) => ({ id: 'home-preview', kind: 'create', bundle: {
+    opengym_plan: 1, name: 'Home', week: {}, customEx: [],
+    routines: [{ id: 'home', name: 'Home', ex: [{ id, sets: 3, reps: 10, weight }] }]
+  } })
+  it('blocks bench exercises and unavailable weights before changing state', () => {
+    for (const p of [preview('0291'), preview('1760', 12)]) {
+      const s = state({ coach: { profile: { equipment: ['dumbbell'], dumbbellWeights: [4, 6, 10] } } })
+      const before = JSON.stringify(s)
+      expect(() => applyCreatedPlan(s, p)).toThrow()
+      expect(JSON.stringify(s)).toBe(before)
+    }
+  })
+  it('accepts a compatible dumbbell plan but rejects it after equipment is removed', () => {
+    const s = state({ coach: { profile: { equipment: ['dumbbell'], dumbbellWeights: [4, 6, 10] } } })
+    expect(() => applyCreatedPlan(s, preview('1760'))).not.toThrow()
+    s.coach.profile.equipment = []
+    expect(() => applyCreatedPlan(s, preview('1760'))).toThrow()
+  })
+})
+
 const state = (over = {}) => ({
   unit: 'kg', lang: 'en', customEx: [], workouts: [], bodyweight: [], exWeights: {}, dayPlan: {},
   routines: [{

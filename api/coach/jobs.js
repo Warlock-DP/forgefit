@@ -294,8 +294,8 @@ async function invoke(adapter, cfg, payload, jobDir, env, job, repair) {
   }
 
   const v = job.kind === 'review'
-    ? validateReview(parsed.value, payload.plan)
-    : validatePlan(parsed.value, { workingWeights: payload.history?.workingWeights, daysPerWeek: payload.coachProfile?.daysPerWeek });
+    ? validateReview(parsed.value, payload.plan, { allowedIds: new Set(payload.library.map(e => e.id)) })
+    : validatePlan(parsed.value, { allowedIds: new Set(payload.library.map(e => e.id)), workingWeights: payload.history?.workingWeights, daysPerWeek: payload.coachProfile?.daysPerWeek });
 
   if (!v.ok) return { ok: false, repairable: !repair, errors: v.errors, raw: r.text, errorClass: 'unusable' };
   if (v.nochange) return { ok: true, nochange: true, reading: v.reading };

@@ -13,6 +13,7 @@
 // replaces at build time.
 
 import { EXIDX, EXDB } from './exercises.js'
+import { compatible } from '../../../api/coach/equipment.js'
 import { modeOf } from './history.js'
 import { planHash } from './coach.js'
 import { t } from './i18n.js'
@@ -37,8 +38,7 @@ function buildReview(S) {
   // Something plausible that is *not* in this routine, from the same body part as the first
   // exercise — a swap the reader can believe rather than a random pick out of 1,324.
   const bp = EXIDX[first.id]?.bp
-  const swapTo = EXDB.find(e => e.bp === bp && e.eq === 'dumbbell' && !(routine.ex || []).some(x => x.id === e.id))
-    || EXDB.find(e => e.bp === bp && !(routine.ex || []).some(x => x.id === e.id))
+  const swapTo = EXDB.find(e => e.bp === bp && compatible(e, S.coach?.profile?.equipment || []) && !(routine.ex || []).some(x => x.id === e.id))
 
   const sessions = (S.workouts || []).slice(-9)
   const changes = []
@@ -69,7 +69,8 @@ function buildReview(S) {
 
 /** A small, honest starter plan for the demo's creation flow. */
 function buildPlan(S, intake) {
-  const pick = (bp, eq) => EXDB.find(e => e.bp === bp && (!eq || e.eq === eq)) || EXDB.find(e => e.bp === bp)
+  const eligible = EXDB.filter(e => compatible(e, intake?.equipment || []))
+  const pick = (bp, eq) => eligible.find(e => e.bp === bp && (!eq || e.eq === eq)) || eligible.find(e => e.bp === bp)
   const days = intake?.preferredDays?.length ? intake.preferredDays.slice(0, 3) : [1, 3, 5]
   const eq = (intake?.equipment || [])[0] || null
   const mk = (id, name, sets, reps, why) => ({ id, sets, reps, mode: 'reps', why })

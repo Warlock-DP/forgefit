@@ -73,6 +73,7 @@ export function validatePlan(data, ctx = {}) {
     .slice(0, 20)
     .map(c => ({ id: clampStr(c.id, 40), n: clampStr(c.n, 60), bp: clampStr(c.bp || 'waist', 30), ...(c.desc ? { desc: clampStr(c.desc, 400) } : {}) }));
   const proposedIds = new Set(customEx.map(c => c.id));
+  if (ctx.allowedIds && customEx.length) errors.push('custom exercises with unverified equipment are not allowed in Coach proposals');
 
   const routines = [];
   (Array.isArray(data.routines) ? data.routines : []).slice(0, MAX_ROUTINES).forEach((r, ri) => {
@@ -83,6 +84,7 @@ export function validatePlan(data, ctx = {}) {
     (Array.isArray(r.ex) ? r.ex : []).slice(0, MAX_EX_PER_ROUTINE).forEach((e, ei) => {
       const where = `routines[${ri}].ex[${ei}]`;
       if (!e || !isStr(e.id)) { errors.push(`${where}.id is required`); return; }
+      if (ctx.allowedIds && !ctx.allowedIds.has(e.id)) { errors.push(`${where}.id requires unavailable or unverified equipment`); return; }
       // FR-16: an id that resolves to nothing invalidates the proposal rather than being
       // dropped into a plan that renders blank the first time it is trained.
       if (!libraryHas(e.id) && !proposedIds.has(e.id)) {
@@ -90,6 +92,10 @@ export function validatePlan(data, ctx = {}) {
         return;
       }
       const clean = { id: e.id, sets: isInt(e.sets, 1, 10) ? e.sets : 3 };
+      if (e.weight > 0 && ctx.dumbbellIds?.has(e.id) && ctx.dumbbellWeights?.length) {
+        const kg = ctx.unit === 'lb' ? e.weight / 2.2046226218 : e.weight;
+        if (!ctx.dumbbellWeights.some(w => Math.abs(w - kg) < 0.05)) errors.push(`${where}.weight must match an available per-dumbbell weight`);
+      }
       const mode = MODES.includes(e.mode) ? e.mode : 'reps';
       if (mode === 'cardio') {
         clean.min = isInt(e.min, 1, 180) ? e.min : 20;
@@ -167,7 +173,7 @@ export function validatePlan(data, ctx = {}) {
  * `plan` is the payload's cleaned plan — every target must resolve against it, so a change
  * aimed at a routine that no longer exists never reaches the review screen.
  */
-export function validateReview(data, plan) {
+export function validateReview(data, plan, ctx = {}) {
   if (!data || typeof data !== 'object') return fail(['the answer was not an object']);
   if (data.nochange) {
     return { ok: true, nochange: true, reading: clampStr(data.reading || data.summary || '', 1200) };
@@ -187,6 +193,11 @@ export function validateReview(data, plan) {
     }
     if (!isStr(c.why)) { errors.push(`${where}.why is required — every change must cite the evidence behind it`); return; }
     const target = c.target || {};
+    const introduced = c.type === 'add-routine' ? (c.after?.ex || []).map(e => e.id)
+      : ['add-exercise', 'swap-exercise'].includes(c.type) ? [c.after?.id] : [];
+    if (ctx.allowedIds && introduced.some(id => !ctx.allowedIds.has(id))) {
+      errors.push(`${where} requires unavailable or unverified equipment`); return;
+    }
     const routine = target.routineId ? routines.get(target.routineId) : null;
 
     // Targets: everything but add-routine and week must name a routine that exists; anything

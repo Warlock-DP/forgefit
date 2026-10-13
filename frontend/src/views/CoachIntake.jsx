@@ -4,13 +4,12 @@ import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { t } from '../lib/i18n.js'
 import { DAYN } from '../lib/format.js'
-import { EXDB } from '../lib/exercises.js'
 import { emptyCoach, coachAvailable } from '../lib/coach.js'
 import { requestPlan } from '../lib/coach-api.js'
 import { DEMO } from '../lib/demo.js'
 import { MOBILE } from '../lib/mobile.js'
 import Icon from '../components/Icon.jsx'
-import { Button, TextArea, Segmented } from '../components/ui.jsx'
+import { Button, TextField, TextArea, Segmented } from '../components/ui.jsx'
 
 /* The intake: one topic per screen, because a single form with eleven fields is a form people
    abandon. Only the first two questions are required — everything after them improves the
@@ -30,13 +29,8 @@ const EXPERIENCE = [
 ]
 const SESSION_MIN = [30, 45, 60, 75, 90]
 
-// Equipment options come from the library's own taxonomy, most common first, so every choice
-// on screen has exercises behind it.
-const EQUIPMENT = (() => {
-  const count = {}
-  EXDB.forEach(e => { if (e.eq) count[e.eq] = (count[e.eq] || 0) + 1 })
-  return Object.keys(count).sort((a, b) => count[b] - count[a]).slice(0, 14)
-})()
+// Home options use audited requirements rather than the catalogue's primary label.
+const EQUIPMENT = ['dumbbell', 'pull-up bar', 'push-up board', 'body weight', 'full gym']
 
 const STEPS = ['goal', 'days', 'length', 'equipment', 'limits', 'extras']
 
@@ -52,7 +46,7 @@ export default function CoachIntake() {
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [p, setP] = useState(() => ({
-    goal: null, experience: null, daysPerWeek: 3, preferredDays: [1, 3, 5],
+    goal: null, secondaryGoals: [], experience: null, daysPerWeek: 3, preferredDays: [1, 3, 5],
     sessionMin: 45, equipment: [], limitations: '', likes: '', dislikes: '', notes: '',
     ...(S.coach?.profile || {})
   }))
@@ -110,6 +104,11 @@ export default function CoachIntake() {
             {p.goal === v && <Icon name="check" className="lrow-k" />}
           </button>)}
         </div>
+        <h2>Additional goals (optional)</h2>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 7 }}>
+          {GOALS.filter(([v]) => v !== p.goal).map(([v, label]) => <button key={v} className={'chip' + ((p.secondaryGoals || []).includes(v) ? ' on' : '')}
+            aria-label={'Additional goal: ' + t(label)} aria-pressed={(p.secondaryGoals || []).includes(v)} onClick={() => set({ secondaryGoals: (p.secondaryGoals || []).includes(v) ? p.secondaryGoals.filter(g => g !== v) : [...(p.secondaryGoals || []), v] })}>{t(label)}</button>)}
+        </div>
         <h2>{t('Where are you starting from?')}</h2>
         <div className="sect-b">
           {EXPERIENCE.map(([v, label]) => <button key={v} className="lrow tap" onClick={() => set({ experience: v })}>
@@ -142,13 +141,17 @@ export default function CoachIntake() {
 
       {key === 'equipment' && <>
         <h2 style={{ marginTop: 0 }}>{t('What can you train with?')}</h2>
-        <div className="muted small" style={{ marginBottom: 10 }}>{t('Pick everything you have access to. Leave it empty and the Coach will use the whole library.')}</div>
+        <div className="muted small" style={{ marginBottom: 10 }}>Pick only what you have. Without equipment selected, only verified floor/bodyweight exercises are used. Full gym enables the entire catalogue.</div>
         <div className="row" style={{ flexWrap: 'wrap', gap: 7 }}>
           {EQUIPMENT.map(e => <button key={e} className={'chip' + (p.equipment.includes(e) ? ' on' : '')}
             onClick={() => toggleEq(e)} style={{ textTransform: 'capitalize' }}>{e}</button>)}
         </div>
       </>}
 
+      {key === 'equipment' && p.equipment.includes('dumbbell') && <label className="muted small" style={{ display: 'block', marginTop: 14 }}>Available weights per dumbbell (kg)
+        <TextField style={{ marginTop: 8 }} value={p.dumbbellWeightText ?? (p.dumbbellWeights || []).join(', ')} placeholder="4, 6, 10"
+          onChange={e => set({ dumbbellWeightText: e.target.value, dumbbellWeights: e.target.value.split(',').map(Number).filter(n => n > 0 && n <= 200).slice(0, 20) })} />
+      </label>}
       {key === 'limits' && <>
         <h2 style={{ marginTop: 0 }}>{t('Anything to work around?')}</h2>
         <div className="muted small" style={{ marginBottom: 10 }}>
