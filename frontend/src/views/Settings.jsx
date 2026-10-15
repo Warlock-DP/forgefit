@@ -398,7 +398,7 @@ function RegisterInline({ close, setUser, pushState, pullState, toast }) {
     <h3>{t('Create your profile')}</h3>
     <div className="muted small" style={{ marginBottom: 14 }}>{t('Pick a name, then confirm with your device.')}</div>
     <TextField ref={nameRef} placeholder={t('Your name')} maxLength={40} />
-    {inviteOnly && <><div style={{ height: 10 }} /><TextField placeholder={t('Invite code')} maxLength={40}
+    {inviteOnly && <><div style={{ height: 10 }} /><TextField placeholder={t('Invite code')} maxLength={128}
       value={code} onChange={e => setCode(e.target.value.toUpperCase())} /></>}
     <div style={{ height: 12 }} /><Button variant="primary" onClick={go}>{t('Create passkey')}</Button>
   </>
