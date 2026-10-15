@@ -16,6 +16,7 @@ import {
 import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import CoachChat from '../components/CoachChat.jsx'
+import CoachQuickActions from '../components/CoachQuickActions.jsx'
 import { Section, Row, Button, TextArea, Switch, SelectRow } from '../components/ui.jsx'
 
 /* The Coach's home: what it's doing, what it's proposing, what it has done before, and every
@@ -97,6 +98,10 @@ export default function Coach() {
 
     <div className="muted small" style={{ marginBottom: 14 }}>{DEMO ? 'Demo — no AI connected' : config?.coach?.chat ? config.coach.enabled ? `OpenRouter · ${config.coach.model || 'configured model'}` : config.coach.connected ? 'OpenRouter connected — AI disabled' : 'No AI connected — configure OpenRouter to use the Coach' : config?.coach?.providerLabel || 'Coach'}</div>
 
+    <CoachQuickActions profile={coach.profile} consented={consented} enabled={DEMO || config?.coach?.enabled}
+      busy={!!job} pending={!!pending} onProfile={() => nav('/coach/intake?edit=1')}
+      onBuild={() => nav('/coach/intake')} onPreview={() => nav('/coach/proposal')} />
+
     {!consented
       ? <ConsentCard onDone={() => refresh()} />
       : <>
@@ -117,18 +122,7 @@ export default function Coach() {
           </div>}
         </div>}
 
-        {(DEMO || config?.coach?.enabled) && !S.routines.length && <div className="card">
-          <div className="muted small" style={{ marginBottom: 10 }}>{t('No plan yet — the Coach can build you one from a few questions.')}</div>
-          <Button variant="primary" icon="sparkles" onClick={() => nav('/coach/intake')}>{t('Let the Coach build my plan')}</Button>
-        </div>}
-
         <CadenceCard coach={coach} update={update} />
-
-        <Section title={t('Coach profile')} footer={t('Used by every proposal — keep limitations here up to date.')}>
-          <Row icon="clipboard" iconTint="var(--indigo)" title={t('Your answers')}
-            subtitle={coach.profile ? summarise(coach.profile) : t('Not set yet')}
-            accessory="chevron" onClick={() => nav('/coach/intake?edit=1')} />
-        </Section>
 
         <LogCard coach={coach} />
 

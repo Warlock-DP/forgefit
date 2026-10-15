@@ -4,8 +4,11 @@ import { effectiveRoutine } from '../lib/history.js'
 import { todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import Icon from './Icon.jsx'
+import { coachAvailable } from '../lib/coach.js'
+import { DEMO } from '../lib/demo.js'
+import { MOBILE } from '../lib/mobile.js'
 
-export function WorkoutTabBar({ current, active, onNavigate, onStart }) {
+export function WorkoutTabBar({ current, active, onNavigate, onStart, showCoach = false }) {
   const on = k => current === k || (current === 'history' && k === 'stats') || (current === 'settings' && k === 'home')
   const Tab = ({ k, icon, to, label }) => (
     <button className={on(k) ? 'on' : ''} onClick={() => onNavigate(to)} aria-current={on(k) ? 'page' : undefined}>
@@ -19,6 +22,7 @@ export function WorkoutTabBar({ current, active, onNavigate, onStart }) {
       aria-current={on('workout') ? 'page' : undefined}>
       <Icon name="play" /><span>{t(active ? 'Resume' : 'Start')}</span><i className="tab-indicator" aria-hidden="true" />
     </button>
+    {showCoach && <Tab k="coach" icon="sparkles" to="/coach" label={t('Coach')} />}
     <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
     <Tab k="library" icon="dumbbell" to="/library" label={t('Exercises')} />
   </nav>
@@ -29,6 +33,7 @@ export default function TabBar({ onStart }) {
   const loc = useLocation()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
+  const config = useStore(s => s.config)
   const isGuest = useStore(s => s.isGuest())
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
@@ -40,5 +45,6 @@ export default function TabBar({ onStart }) {
     }
     nav('/workout')
   }
-  return <WorkoutTabBar current={cur} active={S.active} onNavigate={nav} onStart={startWorkout} />
+  return <WorkoutTabBar current={cur} active={S.active} onNavigate={nav} onStart={startWorkout}
+    showCoach={coachAvailable(config, user, { demo: DEMO, mobile: MOBILE })} />
 }
